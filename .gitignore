@@ -1,0 +1,10 @@
+node_modules/
+.chrome-session/
+.site-memory/
+*.log
+.env
+dist/
+build/
+.DS_Store
+package-lock.json
+pnpm-lock.yaml

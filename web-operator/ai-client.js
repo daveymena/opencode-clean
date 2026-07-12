@@ -77,7 +77,7 @@ async function callCopilot(textContent, model = 'gpt-4o') {
   try {
     const resp = await fetch('https://api.githubcopilot.com/chat/completions', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${copilotToken}`, 'Content-Type': 'application/json', 'Editor-Version': 'vscode/1.85.0', 'Editor-Plugin-Version': 'copilot-chat/0.11.0' },
+      headers: { 'Authorization': `Bearer ${copilotToken}`, 'Content-Type': 'application/json', 'Editor-Version': 'vscode/1.96.0', 'Editor-Plugin-Version': 'copilot/1.250.0', 'Openai-Organization': 'github-copilot', 'Copilot-Integration-Id': 'vscode-chat' },
       body: JSON.stringify({ model, max_tokens: 4096, temperature: 0.1, messages: [{ role: 'user', content: textContent }], stream: false }),
       signal: AbortSignal.timeout(60000),
     });
@@ -93,7 +93,7 @@ async function callCopilotVision(base64, question, model = 'gpt-4o') {
   try {
     const resp = await fetch('https://api.githubcopilot.com/chat/completions', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${copilotToken}`, 'Content-Type': 'application/json', 'Editor-Version': 'vscode/1.85.0' },
+      headers: { 'Authorization': `Bearer ${copilotToken}`, 'Content-Type': 'application/json', 'Editor-Version': 'vscode/1.96.0', 'Editor-Plugin-Version': 'copilot/1.250.0', 'Openai-Organization': 'github-copilot', 'Copilot-Integration-Id': 'vscode-chat' },
       body: JSON.stringify({ model, max_tokens: 4096, messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${base64}`, detail: 'high' } }, { type: 'text', text: question }] }], stream: false }),
       signal: AbortSignal.timeout(60000),
     });
@@ -106,23 +106,31 @@ async function callCopilotVision(base64, question, model = 'gpt-4o') {
 let copilotTokenCache = null;
 let copilotTokenExpiry = 0;
 
+async function getCopilotSessionToken(githubPat) {
+  if (!githubPat) return null;
+  if (githubPat.startsWith("tid_") || githubPat.startsWith("tid=")) {
+    return { token: githubPat, expires_at: Date.now() + 1800 * 1000, refresh_in: 1800 };
+  }
+  try {
+    const resp = await fetch("https://api.github.com/copilot_internal/v2/token", {
+      method: "GET",
+      headers: { "Authorization": `token ${githubPat}`, "Accept": "application/json", "User-Agent": "OpenCode-Evolved/1.0" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.token) return { token: data.token, expires_at: data.expires_at * 1000, refresh_in: data.refresh_in || 1800 };
+    }
+  } catch {}
+  return null;
+}
+
 async function getCopilotToken() {
   if (copilotTokenCache && Date.now() < copilotTokenExpiry) return copilotTokenCache;
-  const githubToken = process.env.GITHUB_COPILOT_TOKEN || process.env.GITHUB_TOKEN;
-  if (!githubToken) return null;
-  const endpoints = ['https://api.github.com/copilot_internal/v2/token', 'https://api.github.com/copilot_internal/token'];
-  for (const endpoint of endpoints) {
-    try {
-      const resp = await fetch(endpoint, {
-        headers: { 'Authorization': `Bearer ${githubToken}`, 'Accept': 'application/json', 'User-Agent': 'GitHub-Copilot-Client/1.0', 'Editor-Version': 'vscode/1.85.0' },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.token) { copilotTokenCache = data.token; copilotTokenExpiry = Date.now() + (50 * 60 * 1000); return data.token; }
-      }
-    } catch {}
-  }
+  const rawToken = process.env.GITHUB_COPILOT_TOKEN || process.env.GITHUB_TOKEN;
+  if (!rawToken) return null;
+  const session = await getCopilotSessionToken(rawToken);
+  if (session) { copilotTokenCache = session.token; copilotTokenExpiry = session.expires_at - 60000; return session.token; }
   return null;
 }
 

@@ -3,6 +3,7 @@ node_modules/
 .site-memory/
 *.log
 .env
+.env.copilot
 dist/
 build/
 .DS_Store

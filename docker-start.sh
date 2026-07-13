@@ -152,13 +152,12 @@ else
 fi
 
 # ============================================================
-# 4. OpenCode Engine (provee modelos locales / zen go)
+# 4. OpenCode Engine (API interna, sin UI — solo backend)
 # ============================================================
 log "[4/9] Configurando providers de OpenCode..."
 OPENCODE_CONFIG_DIR="/root/.config/opencode"
 mkdir -p "$OPENCODE_CONFIG_DIR"
 CONFIG_FILE="$OPENCODE_CONFIG_DIR/opencode.jsonc"
-# Build providers JSON safely
 PROVIDERS="{"
 SEP=""
 if [ -n "$OPENAI_API_KEY" ]; then
@@ -185,12 +184,12 @@ else
   log "  ⚠  Sin API keys — OpenCode no tendrá modelos"
 fi
 if command -v opencode >/dev/null 2>&1; then
-  log "[4/9] Iniciando OpenCode Engine en puerto $OPENCODE_PORT..."
+  log "[4/9] Iniciando OpenCode Engine (API interna) en puerto $OPENCODE_PORT..."
   opencode serve --port "$OPENCODE_PORT" >/tmp/opencode.log 2>&1 &
   PID=$!
   PIDS+=("$PID")
   if wait_for_port localhost "$OPENCODE_PORT" "OpenCode Engine" 60; then
-    log "  → OpenCode Engine listo"
+    log "  → OpenCode Engine listo en :$OPENCODE_PORT (solo backend)"
   else
     log "  ⚠  OpenCode Engine no respondió (ver /tmp/opencode.log)"
     tail -n 20 /tmp/opencode.log
@@ -200,9 +199,9 @@ else
 fi
 
 # ============================================================
-# 6. Agent Server (WebSocket hub para PC Agents)
+# 5. Agent Server (WebSocket hub para PC Agents)
 # ============================================================
-log "[6/10] Iniciando Agent Server en puerto $AGENT_WS_PORT..."
+log "[5/9] Iniciando Agent Server en puerto $AGENT_WS_PORT..."
 node "$APP_DIR/agent-server.mjs" >/tmp/agent-server.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -214,9 +213,9 @@ else
 fi
 
 # ============================================================
-# 7. Bridge Server (MiMoCode ↔ PC Agent)
+# 6. Bridge Server (MiMoCode ↔ PC Agent)
 # ============================================================
-log "[7/10] Iniciando Bridge Server en puerto $BRIDGE_PORT..."
+log "[6/9] Iniciando Bridge Server en puerto $BRIDGE_PORT..."
 node "$APP_DIR/bridge-server.mjs" >/tmp/bridge-server.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -228,9 +227,9 @@ else
 fi
 
 # ============================================================
-# 8. Web Operator API
+# 7. Web Operator API
 # ============================================================
-log "[8/10] Iniciando Web Operator API en puerto $OPERATOR_API_PORT..."
+log "[7/9] Iniciando Web Operator API en puerto $OPERATOR_API_PORT..."
 cd "$APP_DIR/web-operator" || exit 1
 export OPERATOR_API_PORT
 export WEB_OPERATOR_PORT
@@ -246,9 +245,9 @@ else
 fi
 
 # ============================================================
-# 9. Scheduler de skills (preoperacional diario)
+# 8. Scheduler de skills (preoperacional diario)
 # ============================================================
-log "[9/10] Iniciando Scheduler de skills..."
+log "[8/9] Iniciando Scheduler de skills..."
 node "$APP_DIR/skills/preoperacional-nova/scheduler.js" >/tmp/skills-scheduler.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -259,9 +258,9 @@ else
 fi
 
 # ============================================================
-# 10. MiMoCode MCP Server
+# 9. MiMoCode MCP Server
 # ============================================================
-log "[10/10] Iniciando MiMoCode MCP Server en puerto $MIMO_MCP_PORT..."
+log "[9/9] Iniciando MiMoCode MCP Server en puerto $MIMO_MCP_PORT..."
 node "$APP_DIR/mimo-mcp-server.mjs" >/tmp/mimo-mcp.log 2>&1 &
 PID=$!
 PIDS+=("$PID")

@@ -236,32 +236,7 @@ else
 fi
 
 # ============================================================
-# 8. Web UI (serve.js - UI standalone + APIs)
-# ============================================================
-log "[8/6] Iniciando Web UI en puerto $PORT..."
-
-# Set env vars for serve.js
-export FREEMODEL_API_KEY="${FREEMODEL_API_KEY:-}"
-export FREEMODEL_BASE_URL="${FREEMODEL_BASE_URL:-https://api.freemodel.dev/v1}"
-export FREEMODEL_MODEL="${FREEMODEL_MODEL:-gpt-4o}"
-export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
-export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
-export OPERATOR_API_PORT="${OPERATOR_API_PORT:-3001}"
-export AGENT_WS_PORT="${AGENT_WS_PORT:-21291}"
-export OPENCODE_SERVER_PASSWORD="${OPENCODE_SERVER_PASSWORD:-}"
-
-node "$APP_DIR/serve.js" >/tmp/serve.log 2>&1 &
-PID=$!
-PIDS+=("$PID")
-if wait_for_port localhost "$PORT" "Web UI" 30; then
-  log "  → Web UI listo en :$PORT"
-else
-  log "  ⚠  Web UI no respondió (ver /tmp/serve.log)"
-  tail -n 20 /tmp/serve.log
-fi
-
-# ============================================================
-# 9. MiMoCode MCP Server
+# 8. MiMoCode MCP Server
 # ============================================================
 log "[9/6] Iniciando MiMoCode MCP Server en puerto $MIMO_MCP_PORT..."
 node "$APP_DIR/mimo-mcp-server.mjs" >/tmp/mimo-mcp.log 2>&1 &

@@ -131,6 +131,29 @@ log "  → VNC listo en :$VNC_PORT, noVNC en :$NOVNC_PORT"
 # ============================================================
 # 3. OpenCode Engine (provee modelos locales / zen go)
 # ============================================================
+log "[3/6] Configurando providers de OpenCode..."
+OPENCODE_CONFIG_DIR="/root/.config/opencode"
+mkdir -p "$OPENCODE_CONFIG_DIR"
+if [ -n "$GITHUB_COPILOT_TOKEN" ]; then
+  cat > "$OPENCODE_CONFIG_DIR/opencode.jsonc" << EOF
+{
+  "\$schema": "https://opencode.ai/config.json",
+  "model": "opencode-go/deepseek-v4-flash",
+  "provider": {
+    "github-copilot": {
+      "token": "$GITHUB_COPILOT_TOKEN"
+    }
+  },
+  "permission": {
+    "bash": { "/**": "allow" },
+    "read": { "/**": "allow" },
+    "write": { "/**": "allow" },
+    "edit": { "/**": "allow" }
+  }
+}
+EOF
+  log "  → GitHub Copilot configurado como provider"
+fi
 log "[3/6] Iniciando OpenCode Engine en puerto $OPENCODE_PORT..."
 if command -v opencode >/dev/null 2>&1; then
   opencode serve --port "$OPENCODE_PORT" >/tmp/opencode.log 2>&1 &

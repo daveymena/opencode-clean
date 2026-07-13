@@ -492,12 +492,8 @@ const UI_DIR        = existsSync(UI_DIR_DOCKER) ? UI_DIR_DOCKER : UI_DIR_LOCAL;
 const UI_INDEX      = path.join(UI_DIR, 'index.html');
 const hasStandalone = existsSync(UI_INDEX);
 
-if (hasStandalone) {
-  app.use(express.static(UI_DIR, { index: false }));
-  console.log(`✦ Frontend standalone cargado desde ${UI_DIR}`);
-} else {
-  console.log(`✦ Frontend standalone no encontrado`);
-}
+// Always proxy to OpenCode — serve the original UI, not custom standalone
+console.log(`✦ Proxying todo a OpenCode en ${OPENCODE_TARGET} (UI original)`);
 
 const shellCSS = `<link rel="stylesheet" href="/__shell/shell.css">`;
 const shellJS  = `<script src="/__shell/shell.js"></script>`;
@@ -558,19 +554,8 @@ const proxyOptions = {
   },
 };
 
-if (hasStandalone) {
-  app.use("/api", createProxyMiddleware({ ...proxyOptions, pathRewrite: undefined }));
-  app.use("/__shell", createProxyMiddleware({ ...proxyOptions, pathRewrite: undefined }));
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/__')) {
-      res.sendFile(UI_INDEX);
-    } else {
-      next();
-    }
-  });
-} else {
-  app.use("/", createProxyMiddleware(proxyOptions));
-}
+// Always proxy all routes to OpenCode (serves original UI)
+app.use("/", createProxyMiddleware(proxyOptions));
 
 const server = createServer(app);
 const wsProxy = createProxyMiddleware({ target: OPENCODE_TARGET, changeOrigin: true, ws: true });

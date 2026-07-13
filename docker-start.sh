@@ -96,6 +96,7 @@ pkill -f 'node agent-server.mjs' 2>/dev/null || true
 pkill -f 'node bridge-server.mjs' 2>/dev/null || true
 pkill -f 'node api-server.js' 2>/dev/null || true
 pkill -f 'node proxy.mjs' 2>/dev/null || true
+pkill -f 'node serve.js' 2>/dev/null || true
 sleep 2
 
 banner
@@ -103,7 +104,7 @@ banner
 # ============================================================
 # 1. Pantalla virtual
 # ============================================================
-log "[1/6] Iniciando pantalla virtual (Xvfb)..."
+log "[1/9] Iniciando pantalla virtual (Xvfb)..."
 Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -116,7 +117,7 @@ log "  → Xvfb listo en DISPLAY :99"
 # ============================================================
 # 2. VNC + noVNC
 # ============================================================
-log "[2/6] Iniciando VNC + noVNC..."
+log "[2/9] Iniciando VNC + noVNC..."
 x11vnc -display :99 -nopw -listen localhost -xkb -forever -quiet >/tmp/x11vnc.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -131,7 +132,7 @@ log "  → VNC listo en :$VNC_PORT, noVNC en :$NOVNC_PORT"
 # ============================================================
 # 3. OpenCode Engine (provee modelos locales / zen go)
 # ============================================================
-log "[3/6] Configurando providers de OpenCode..."
+log "[3/9] Configurando providers de OpenCode..."
 OPENCODE_CONFIG_DIR="/root/.config/opencode"
 mkdir -p "$OPENCODE_CONFIG_DIR"
 CONFIG_FILE="$OPENCODE_CONFIG_DIR/opencode.jsonc"
@@ -161,7 +162,7 @@ EOF
 else
   log "  ⚠  Sin API keys — OpenCode no tendrá modelos"
 fi
-log "[3/6] Iniciando OpenCode Engine en puerto $OPENCODE_PORT..."
+log "[3/9] Iniciando OpenCode Engine en puerto $OPENCODE_PORT..."
 if command -v opencode >/dev/null 2>&1; then
   opencode serve --port "$OPENCODE_PORT" >/tmp/opencode.log 2>&1 &
   PID=$!
@@ -179,7 +180,7 @@ fi
 # ============================================================
 # 4. Agent Server (WebSocket hub para PC Agents)
 # ============================================================
-log "[4/6] Iniciando Agent Server en puerto $AGENT_WS_PORT..."
+log "[4/9] Iniciando Agent Server en puerto $AGENT_WS_PORT..."
 node "$APP_DIR/agent-server.mjs" >/tmp/agent-server.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -193,7 +194,7 @@ fi
 # ============================================================
 # 5. Bridge Server (MiMoCode ↔ PC Agent)
 # ============================================================
-log "[5/6] Iniciando Bridge Server en puerto $BRIDGE_PORT..."
+log "[5/9] Iniciando Bridge Server en puerto $BRIDGE_PORT..."
 node "$APP_DIR/bridge-server.mjs" >/tmp/bridge-server.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -207,7 +208,7 @@ fi
 # ============================================================
 # 6. Web Operator API
 # ============================================================
-log "[6/6] Iniciando Web Operator API en puerto $OPERATOR_API_PORT..."
+log "[6/9] Iniciando Web Operator API en puerto $OPERATOR_API_PORT..."
 cd "$APP_DIR/web-operator" || exit 1
 export OPERATOR_API_PORT
 export WEB_OPERATOR_PORT
@@ -225,7 +226,7 @@ fi
 # ============================================================
 # 7. Scheduler de skills (preoperacional diario)
 # ============================================================
-log "[7/6] Iniciando Scheduler de skills..."
+log "[7/9] Iniciando Scheduler de skills..."
 node "$APP_DIR/skills/preoperacional-nova/scheduler.js" >/tmp/skills-scheduler.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -236,9 +237,23 @@ else
 fi
 
 # ============================================================
-# 8. MiMoCode MCP Server
+# 8. Web UI (serve.js) — Interfaz web principal con Express
 # ============================================================
-log "[9/6] Iniciando MiMoCode MCP Server en puerto $MIMO_MCP_PORT..."
+log "[8/9] Iniciando Web UI en puerto $PORT..."
+node "$APP_DIR/serve.js" >/tmp/serve.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+if wait_for_port localhost "$PORT" "Web UI" 30; then
+  log "  → Web UI listo en :$PORT"
+else
+  log "  ⚠  Web UI no respondió (ver /tmp/serve.log)"
+  tail -n 20 /tmp/serve.log
+fi
+
+# ============================================================
+# 9. MiMoCode MCP Server
+# ============================================================
+log "[9/9] Iniciando MiMoCode MCP Server en puerto $MIMO_MCP_PORT..."
 node "$APP_DIR/mimo-mcp-server.mjs" >/tmp/mimo-mcp.log 2>&1 &
 PID=$!
 PIDS+=("$PID")
@@ -253,7 +268,7 @@ echo ""
 echo "  ╔══════════════════════════════════════════════╗"
 echo "  ║          TODO LISTO EN EASYPANEL             ║"
 echo "  ╠══════════════════════════════════════════════╣"
-echo "  ║  OpenCode UI:  http://0.0.0.0:$OPENCODE_PORT  ║"
+echo "  ║  Web UI:       http://0.0.0.0:$PORT          ║"
 echo "  ║  OpenCode:     http://localhost:$OPENCODE_PORT          ║"
 echo "  ║  Web Operator: http://localhost:$OPERATOR_API_PORT          ║"
 echo "  ║  Agent Server: ws://localhost:$AGENT_WS_PORT/agent      ║"
@@ -283,20 +298,27 @@ while true; do
     fi
   done
 
-  # Health check del OpenCode engine
+  # Health check de la Web UI (serve.js) — es el servicio más crítico
+  UI_UP=false
+  if curl -sf "http://localhost:$PORT/health" >/dev/null 2>&1; then
+    UI_UP=true
+  fi
+
+  # Health check del OpenCode engine (no crítico, puede fallar sin reiniciar)
   ENGINE_UP=false
   if curl -sf "http://localhost:$OPENCODE_PORT/" >/dev/null 2>&1; then
     ENGINE_UP=true
   fi
 
-  echo "{\"status\":\"running\",\"alive\":$ALIVE,\"dead\":$DEAD,\"engine_up\":$ENGINE_UP,\"checked\":\"$(date -Iseconds)\"}" > "$HEALTH_FILE"
+  echo "{\"status\":\"running\",\"alive\":$ALIVE,\"dead\":$DEAD,\"engine_up\":$ENGINE_UP,\"ui_up\":$UI_UP,\"checked\":\"$(date -Iseconds)\"}" > "$HEALTH_FILE"
 
   if [ "$DEAD" -gt 0 ]; then
-    log "Aviso: $DEAD proceso(s) han terminado ($ALIVE vivos). Engine UP=$ENGINE_UP"
+    log "Aviso: $DEAD proceso(s) han terminado ($ALIVE vivos). UI_UP=$UI_UP Engine_UP=$ENGINE_UP"
   fi
 
-  if [ "$ENGINE_UP" = false ] && [ "$ALIVE" -lt 3 ]; then
-    log "CRÍTICO: Engine caído y pocos servicios vivos. Saliendo para que Docker reinicie..."
+  # Solo salir si la Web UI está caída Y hay menos de 2 servicios vivos
+  if [ "$UI_UP" = false ] && [ "$ALIVE" -lt 2 ]; then
+    log "CRÍTICO: Web UI caída y servicios mínimos. Solicitando reinicio..."
     exit 1
   fi
 done

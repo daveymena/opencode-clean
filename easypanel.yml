@@ -5,9 +5,9 @@ services:
       type: dockerfile
       file: Dockerfile
     domains:
-      # UI ORIGINAL de OpenCode (la que quieres)
+      # Web UI (serve.js) — interfaz Express con chat, media y APIs
       - host: "$(PRIMARY_DOMAIN)"
-        port: 21294
+        port: 3000
         https: true
       # Dominio para que el PC Agent se conecte desde fuera del contenedor
       - host: "agent-$(PRIMARY_DOMAIN)"

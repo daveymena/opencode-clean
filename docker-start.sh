@@ -253,7 +253,7 @@ echo ""
 echo "  ╔══════════════════════════════════════════════╗"
 echo "  ║          TODO LISTO EN EASYPANEL             ║"
 echo "  ╠══════════════════════════════════════════════╣"
-echo "  ║  Proxy UI:     http://0.0.0.0:$PORT          ║"
+echo "  ║  OpenCode UI:  http://0.0.0.0:$OPENCODE_PORT  ║"
 echo "  ║  OpenCode:     http://localhost:$OPENCODE_PORT          ║"
 echo "  ║  Web Operator: http://localhost:$OPERATOR_API_PORT          ║"
 echo "  ║  Agent Server: ws://localhost:$AGENT_WS_PORT/agent      ║"
@@ -283,20 +283,20 @@ while true; do
     fi
   done
 
-  # Health check del proxy (evita que Docker/EasyPanel reinicie sin razón)
-  PROXY_UP=false
-  if curl -sf "http://localhost:$PORT/__health" >/dev/null 2>&1; then
-    PROXY_UP=true
+  # Health check del OpenCode engine
+  ENGINE_UP=false
+  if curl -sf "http://localhost:$OPENCODE_PORT/" >/dev/null 2>&1; then
+    ENGINE_UP=true
   fi
 
-  echo "{\"status\":\"running\",\"alive\":$ALIVE,\"dead\":$DEAD,\"proxy_up\":$PROXY_UP,\"checked\":\"$(date -Iseconds)\"}" > "$HEALTH_FILE"
+  echo "{\"status\":\"running\",\"alive\":$ALIVE,\"dead\":$DEAD,\"engine_up\":$ENGINE_UP,\"checked\":\"$(date -Iseconds)\"}" > "$HEALTH_FILE"
 
   if [ "$DEAD" -gt 0 ]; then
-    log "Aviso: $DEAD proceso(s) han terminado ($ALIVE vivos). Proxy UP=$PROXY_UP"
+    log "Aviso: $DEAD proceso(s) han terminado ($ALIVE vivos). Engine UP=$ENGINE_UP"
   fi
 
-  if [ "$PROXY_UP" = false ] && [ "$ALIVE" -lt 3 ]; then
-    log "CRÍTICO: Proxy caído y pocos servicios vivos. Saliendo para que Docker reinicie..."
+  if [ "$ENGINE_UP" = false ] && [ "$ALIVE" -lt 3 ]; then
+    log "CRÍTICO: Engine caído y pocos servicios vivos. Saliendo para que Docker reinicie..."
     exit 1
   fi
 done

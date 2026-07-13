@@ -42,7 +42,8 @@ RUN cd artifacts/opencode-ui && npm install
 
 COPY . .
 
-RUN mkdir -p /app/ui && cp /app/artifacts/opencode-ui/ui/index.html /app/ui/index.html 2>/dev/null || true
+# REMOVIDO: No copiar UI standalone para permitir el uso de la UI original de OpenCode
+# RUN mkdir -p /app/ui && cp /app/artifacts/opencode-ui/ui/index.html /app/ui/index.html 2>/dev/null || true
 
 RUN rm -f /app/pnpm-workspace.yaml /app/pnpm-lock.yaml /app/bun.lock
 

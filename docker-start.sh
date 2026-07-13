@@ -36,9 +36,14 @@ else
   echo "  ⚠  OpenCode no encontrado — saltando engine"
 fi
 
+# Cambiamos el puerto del Web Operator API para evitar conflicto con el Proxy (3000)
+# Usaremos 3005 para la API del Operador
+OPERATOR_API_PORT=3005
+export OPERATOR_PORT=${OPERATOR_PORT:-3001}
+export API_SERVER_PORT=$OPERATOR_API_PORT
+
 echo "[4/5] Iniciando Web Operator..."
 cd /app/web-operator
-export WEB_OPERATOR_PORT=3001
 node api-server.js &
 WEB_PID=$!
 sleep 3

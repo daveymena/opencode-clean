@@ -30,8 +30,30 @@
         <div class="oc-dot purple" title="MCP Tools activos"></div>
         <div class="oc-dot blue"   title="Visión universal activa"></div>
       </div>
-      <div class="oc-tools-info" title="Herramientas activas">
-        🛠 SSH · PowerShell · Browser · Files · Memory · 👁 Visión Universal
+      <div class="oc-dropdown">
+        <button class="oc-dropdown-btn" id="oc-dropdown-toggle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+          <span>Más</span>
+        </button>
+        <div class="oc-dropdown-menu" id="oc-dropdown-menu">
+          <button class="oc-dropdown-item" id="oc-dd-live">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            Live Agent
+          </button>
+          <button class="oc-dropdown-item" id="oc-dd-vision">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            Visión Universal
+          </button>
+          <div class="oc-dropdown-divider"></div>
+          <button class="oc-dropdown-item" id="oc-dd-screenshot">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            Capturar Pantalla
+          </button>
+          <button class="oc-dropdown-item" id="oc-dd-powershell">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            PowerShell Rápido
+          </button>
+        </div>
       </div>
       <div class="oc-status" id="oc-status-text">listo</div>
     `;
@@ -308,10 +330,67 @@
     document.head.appendChild(s);
   }
 
+  function setupDropdown() {
+    const toggle = document.getElementById("oc-dropdown-toggle");
+    const menu = document.getElementById("oc-dropdown-menu");
+    if (!toggle || !menu) return;
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.classList.toggle("open");
+    });
+    document.addEventListener("click", () => menu.classList.remove("open"));
+    document.getElementById("oc-dd-vision")?.addEventListener("click", () => {
+      menu.classList.remove("open");
+      togglePanel();
+    });
+    document.getElementById("oc-dd-live")?.addEventListener("click", () => {
+      menu.classList.remove("open");
+      const agentBtn = document.querySelector('button[aria-label*="live"], button[aria-label*="Live"], button[aria-label*="agent"], button[aria-label*="Agent"]');
+      if (agentBtn) agentBtn.click();
+      else showStatus("Live Agent no disponible", "#ef4444");
+    });
+    document.getElementById("oc-dd-screenshot")?.addEventListener("click", async () => {
+      menu.classList.remove("open");
+      showStatus("📸 Capturando pantalla...", "#8b5cf6");
+      try {
+        const r = await fetch("/api/agent/screenshot", { method: "POST" });
+        const d = await r.json();
+        if (d.ok && d.base64) {
+          const panel = document.getElementById("oc-vision-panel");
+          panel.classList.add("open");
+          const drop = document.getElementById("oc-vision-drop");
+          const preview = document.getElementById("oc-vision-preview");
+          const img = document.getElementById("oc-vision-img");
+          drop.style.display = "none"; preview.style.display = "block";
+          img.src = "data:image/jpeg;base64," + d.base64;
+          currentBase64 = img.src;
+          showStatus("✅ Captura lista para analizar", "#10b981");
+        } else showStatus("❌ No se pudo capturar", "#ef4444");
+      } catch(e) { showStatus("❌ Error: " + e.message, "#ef4444"); }
+    });
+    document.getElementById("oc-dd-powershell")?.addEventListener("click", () => {
+      menu.classList.remove("open");
+      const cmd = prompt("Ejecutar comando PowerShell:");
+      if (cmd) {
+        showStatus("⚡ Ejecutando...", "#8b5cf6");
+        fetch("/api/agent/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ "type": "powershell", "script": cmd })
+        }).then(r => r.json()).then(d => {
+          if (d.ok) injectTextToChat("```powershell\n" + (d.output || "OK") + "\n```");
+          else injectTextToChat("Error: " + (d.error || "Desconocido"));
+          showStatus("✅ PowerShell ejecutado", "#10b981");
+        }).catch(e => showStatus("❌ " + e.message, "#ef4444"));
+      }
+    });
+  }
+
   function tryInit() {
     try {
       injectHeader();
       initInternalBrowser();
+      setupDropdown();
       loadScript("/__shell/voice.js");
     } catch (e) { console.log('[shell] Esperando que OpenCode cargue...', e.message); }
   }

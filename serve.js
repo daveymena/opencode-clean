@@ -10,7 +10,7 @@ import { createServer } from "http";
 import { WebSocket } from "ws";
 import path from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync } from "fs";
+import fs, { existsSync, readFileSync } from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || "3000");
@@ -252,7 +252,12 @@ function connectAgent() {
   const url = `ws://localhost:${AGENT_WS_PORT}/agent`;
   console.log(`[agent] Conectando a ${url}...`);
   try {
-    agentWs = new WebSocket(url);
+    const agentToken = process.env.AGENT_SERVER_TOKEN || '';
+    const options = {};
+    if (agentToken) {
+      options.headers = { Authorization: `Bearer ${agentToken}` };
+    }
+    agentWs = new WebSocket(url, options);
     agentWs.on("open", () => {
       console.log("[agent] Conectado a agent-server");
       agentWs.send(JSON.stringify({ type: "register", agentName: "opencode-ui", agentId: "opencode-evolved-ui", sysinfo: { role: "controller" } }));

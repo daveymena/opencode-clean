@@ -412,13 +412,21 @@ app.use((req, res, next) => {
 
 // ─── Start server ──────────────────────────────────────────────
 const server = createServer(app);
+server.on("error", (err) => {
+  console.error(`[serve.js] Error del servidor: ${err.message}`);
+  if (err.code === "EADDRINUSE") {
+    console.error(`[serve.js] Puerto ${PORT} en uso. Reintentando en puerto ${PORT + 1}...`);
+    server.listen(PORT + 1, "0.0.0.0");
+    return;
+  }
+});
 server.listen(PORT, "0.0.0.0", () => {
   console.log("");
   console.log("  ╔══════════════════════════════════════════════╗");
   console.log("  ║     OpenCode Evolved — Servidor Activo      ║");
   console.log("  ╠══════════════════════════════════════════════╣");
-  console.log(`  ║  Web UI:     http://localhost:${PORT}             ║`);
-  console.log(`  ║  Chat API:   http://localhost:${PORT}/api/chat     ║`);
+  console.log(`  ║  Web UI:     http://localhost:${server.address().port}          ║`);
+  console.log(`  ║  Chat API:   http://localhost:${server.address().port}/api/chat  ║`);
   console.log(`  ║  Agent:      ws://localhost:${AGENT_WS_PORT}/agent       ║`);
   console.log(`  ║  Operator:   http://localhost:${OPERATOR_PORT}/api      ║`);
   console.log("  ╚══════════════════════════════════════════════╝");

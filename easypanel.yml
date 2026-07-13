@@ -5,8 +5,9 @@ services:
       type: dockerfile
       file: Dockerfile
     domains:
+      # UI ORIGINAL de OpenCode (la que quieres)
       - host: "$(PRIMARY_DOMAIN)"
-        port: 3000
+        port: 21294
         https: true
       # Dominio para que el PC Agent se conecte desde fuera del contenedor
       - host: "agent-$(PRIMARY_DOMAIN)"

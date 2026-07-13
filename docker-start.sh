@@ -8,8 +8,8 @@ set +e
 # ============================================================
 
 # --- Configuración de puertos (NO cambiar sin actualizar Dockerfile/easypanel.yml) ---
-export PORT="${PORT:-3000}"                    # Proxy Web UI (expuesto por EasyPanel)
-export OPENCODE_PORT="${OPENCODE_PORT:-21294}" # OpenCode Engine interno
+export PORT="${PORT:-21294}"                   # Web UI (proxy EasyPanel apunta aquí)
+export OPENCODE_PORT="${OPENCODE_PORT:-21293}" # OpenCode Engine interno
 export OPENCODE_INTERNAL_PORT="${OPENCODE_PORT}"
 export OPERATOR_API_PORT="${OPERATOR_API_PORT:-3001}"   # Web Operator API interna
 export WEB_OPERATOR_PORT="${OPERATOR_API_PORT}"

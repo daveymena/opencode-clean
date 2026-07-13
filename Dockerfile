@@ -68,6 +68,6 @@ RUN chmod +x /app/docker-start.sh /app/skills/setup-skills.sh
 EXPOSE 3000 3001 21291 21294 21295 21296 6080 5900
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -sf http://localhost:3000/health || exit 1
+    CMD curl -sf http://localhost:21294/health || exit 1
 
 CMD ["/app/docker-start.sh"]

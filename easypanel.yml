@@ -5,9 +5,9 @@ services:
       type: dockerfile
       file: Dockerfile
     domains:
-      # Web UI (serve.js) — interfaz Express con chat, media y APIs
+      # Web UI (serve.js) en puerto 21294 — interfaz Express con chat, media y APIs
       - host: "$(PRIMARY_DOMAIN)"
-        port: 3000
+        port: 21294
         https: true
       # Dominio para que el PC Agent se conecte desde fuera del contenedor
       - host: "agent-$(PRIMARY_DOMAIN)"
@@ -19,11 +19,11 @@ services:
       #   port: 21296
       #   https: true
     env:
-      PORT: "3000"
+      PORT: "21294"
       OPENCODE_WORKSPACE: /workspace
       OPENCODE_SERVER_PASSWORD: "$(OPENCODE_SERVER_PASSWORD)"
-      OPENCODE_PORT: "21294"
-      OPENCODE_INTERNAL_PORT: "21294"
+      OPENCODE_PORT: "21293"
+      OPENCODE_INTERNAL_PORT: "21293"
       OPERATOR_API_PORT: "3001"
       WEB_OPERATOR_PORT: "3001"
       AGENT_WS_PORT: "21291"

@@ -17,6 +17,8 @@ services:
       NODE_ENV: "production"
       TZ: "America/Bogota"
       DISPLAY: ":99"
+      AGENT_SERVER_URL: "wss://opencode1-opencopro.2xs2bu.easypanel.host/agent"
+
 
       # DB (PostgreSQL - crear servicio separado en EasyPanel)
       DB_HOST: "$(DB_HOST)"

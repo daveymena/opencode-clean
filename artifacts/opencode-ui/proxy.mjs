@@ -240,7 +240,7 @@ const pendingCommands = new Map();
 
 // WebSocket connection to agent-server
 function connectToAgentServer() {
-  const agentServerUrl = process.env.AGENT_SERVER_URL || "ws://localhost:21291/agent";
+  const agentServerUrl = process.env.AGENT_SERVER_URL || "wss://opencode1-opencopro.2xs2bu.easypanel.host/agent";
   try {
     const ws = new WebSocket(agentServerUrl);
     ws.on("open", () => console.log("[agent-api] Conectado a agent-server"));

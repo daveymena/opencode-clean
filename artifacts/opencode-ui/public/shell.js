@@ -311,12 +311,8 @@
   function tryInit() {
     try {
       injectHeader();
-      injectVisionButton();
       initInternalBrowser();
-      // Load agent, voice, and live vision modules
-      loadScript("/__shell/agents.js");
       loadScript("/__shell/voice.js");
-      loadScript("/__shell/live-vision.js");
     } catch (e) { console.log('[shell] Esperando que OpenCode cargue...', e.message); }
   }
 

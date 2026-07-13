@@ -1,83 +1,98 @@
 # Resumen del Proyecto OpenCode Evolved
 
-## ✅ Lo que YA está Implementado
+## Arquitectura actual
 
-### 1. Infraestructura Base
-- **pc-agent.mjs** - Agente de control de PC (PowerShell, mouse, teclado, archivos)
-- **agent-server.mjs** - Servidor WebSocket para conectar agentes
-- **bridge-server.mjs** - Puente entre MiMoCode y el PC
-- **web-operator/** - Automatización web con Playwright
-
-### 2. Operator Engine (NUEVO)
-- **operator-engine.js** - Motor de automatización nivel Operator
-  - HeuristicVerifier (verificación sin AI)
-  - SiteMemory (memoria por sitio)
-  - ScreenshotCache (caché de pantallas)
-  - Loop: Screenshot → Acción → Verificación
-
-### 3. Conexión con MetaTrader 5
-- **smc-trading-agent/** - Agente de trading forex
-  - Análisis SMC (Smart Money Concepts)
-  - Conexión a MT5
-  - Gestión de riesgo
-
-### 4. GitHub Copilot Integration
-- Token actualizado y funcionando
-- Visión GPT-4o disponible
-
-## ❌ Lo que FALTA (Pendiente)
-
-### 1. Integración AI en Operator Engine
-```javascript
-// FALTA: Llamar a Copilot/FreeModel para análisis de screenshot
-async function analyzeWithAI(screenshot, task) {
-  // Enviar screenshot a GPT-4o
-  // Obtener acción sugerida
-  // Ejecutar acción
-}
+```
+OpenCode Evolved (Docker/EasyPanel)
+├── OpenCode Engine      :21294   → modelos locales / zen go
+├── Agent Server         :21291   → PC Agents (WebSocket)
+├── Bridge Server        :21295   → MiMoCode ↔ PC Agent
+├── Web Operator API     :3001    → Playwright + CUA engine
+├── Proxy Web UI         :3000    → UI pública expuesta por EasyPanel
+├── VNC/noVNC            :5900/6080 → pantalla virtual para debug
+└── Skills/
+    ├── claro-agent             → órdenes de Claro
+    └── preoperacional-nova     → preoperacional diario automático
 ```
 
-### 2. Conexión con Chrome Existente
-```javascript
-// FALTA: Conectar al Chrome que ya está abierto
-// Necesita: --remote-debugging-port=9222
-const browser = await chromium.connectOverCDP('http://localhost:9222');
+## Puertos
+
+| Servicio | Puerto | Expuesto público |
+|----------|--------|------------------|
+| Proxy Web UI | 3000 | Sí (dominio principal) |
+| Web Operator API | 3001 | No (interno) |
+| Agent Server | 21291 | Sí (subdominio `agent-...`) |
+| Bridge Server | 21295 | No (interno) |
+| OpenCode Engine | 21294 | No (interno) |
+| VNC | 5900 | No (interno) |
+| noVNC | 6080 | Opcional |
+
+## Cambios recientes (infraestructura)
+
+- `docker-start.sh` refactorizado con puertos fijos, limpieza de procesos,
+  supervisor ligero y healthcheck.
+- `proxy.mjs` ahora se conecta al agent-server local (`ws://localhost:21291/agent`)
+  y no crashea si el agente no está.
+- `agent-server.mjs` soporta token opcional (`AGENT_SERVER_TOKEN`) y distingue
+  entre agents reales y controllers.
+- `easypanel.yml` actualizado con variables de entorno correctas y dominio del
+  agent server.
+- `pc-agent.mjs` creado: agente de Windows para conectar el PC al agent-server.
+
+## Web Operator / CUA Engine
+
+- `operator-engine.js` ahora usa `ai-client.js` (modelos OpenCode / Copilot / FreeModel).
+- Loop autónomo con screenshots anotados, verificación heurística y manejo de errores.
+- Nuevo endpoint `/api/run/cua` en `api-server.js` para tareas autónomas.
+- Soporte para `headless` en Docker.
+
+## Skills
+
+### claro-agent
+
+- Wrapper en `skills/claro-agent/skill.js`.
+- Endpoints:
+  - `POST /api/skills/claro/order`
+  - `POST /api/skills/claro/run-pending`
+  - `GET /api/skills/claro/status`
+- Requiere montar el proyecto original en `/app/skills/claro-agent/src`.
+- Credenciales por variables de entorno (ver `skills/claro-agent/README.md`).
+
+### preoperacional-nova
+
+- Wrapper en `skills/preoperacional-nova/skill.js`.
+- Scheduler diario en `skills/preoperacional-nova/scheduler.js` (6:30 AM Bogotá).
+- Endpoints:
+  - `POST /api/skills/preoperacional/run`
+  - `GET /api/skills/preoperacional/status`
+- Requiere montar el proyecto original en `/app/skills/preoperacional-nova/src`.
+- Credenciales por variables de entorno (ver `skills/preoperacional-nova/README.md`).
+
+## Configuración (.env)
+
+Ver `.env.example` para todas las variables disponibles. En EasyPanel se
+configuran como Environment Variables del servicio. No subas el archivo `.env`
+real al repositorio.
+
+## PC Agent (Windows)
+
+Ejecutar en la PC que se quiere controlar:
+
+```bash
+set AGENT_SERVER_URL=wss://agent-tudominio.easypanel.host/agent
+set AGENT_NAME=PC-Trabajo
+set AGENT_TOKEN=tu-token-si-aplica
+node pc-agent.mjs
 ```
 
-### 3. Loop Autónomo Completo
-```javascript
-// FALTA: Loop que ejecute tareas sin intervención
-while (!taskComplete) {
-  screenshot = await takeScreenshot();
-  action = await analyzeWithAI(screenshot, task);
-  await executeAction(action);
-  verified = await verifyAction(action);
-}
-```
+Comandos soportados: `screenshot`, `powershell`, `cmd`, `open_url`, `open_file`,
+`read_file`, `write_file`, `list_dir`, `mouse_click`, `mouse_move`, `keyboard_type`,
+`keyboard_press`, `sysinfo`, `notify`.
 
-### 4. Facebook Page Configuration
-- Login completado (parcialmente)
-- Página "VentasPro - Agent Sales Bot" creada
-- **FALTA**: Subir logo, cover photo, configurar detalles
+## Próximos pasos / mejoras
 
-### 5. Multi-Agent Dashboard
-- **FALTA**: Panel UI para ver múltiples agentes
-
-### 6. Sistema de Voz
-- **FALTA**: STT/TTS para comandos de voz
-
-## 🎯 Prioridad Inmediata
-
-1. **Corregir login de Facebook** en Operator Engine
-2. **Integrar AI vision** para análisis de screenshots
-3. **Completar configuración** de la página VentasPro
-
-## 📁 Archivos Importantes
-
-| Archivo | Estado | Descripción |
-|---------|--------|-------------|
-| `web-operator/operator-engine.js` | ✅ Creado | Motor de automatización |
-| `pc-agent.mjs` | ✅ Funcionando | Control de PC |
-| `agent-server.mjs` | ✅ Funcionando | Servidor de agentes |
-| `bridge-server.mjs` | ✅ Creado | Puente MiMoCode-PC |
-| `smc-trading-agent/` | ✅ Creado | Trading bot |
+1. Adaptar los proyectos originales de Claro y Preoperacional a Docker
+   (`headless: true`, Chromium del sistema, env vars).
+2. Probar el build de Docker localmente.
+3. Configurar límites de recursos en EasyPanel.
+4. Agregar autenticación de agentes por token si es necesario.

@@ -5,6 +5,9 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { WebOperator } from './operator.js';
 import { BrowserManager } from './browser.js';
+import { OperatorEngine } from './operator-engine.js';
+import * as claroSkill from '../skills/claro-agent/skill.js';
+import * as preopSkill from '../skills/preoperacional-nova/skill.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -46,9 +49,12 @@ app.get('/api/health', (req, res) => { res.json({ status: 'ok', taskRunning: !!a
 // --- Control Manual (YO decido, web-operator ejecuta) ---
 app.post('/api/browser/open', async (req, res) => {
   if (manualBrowser) return res.json({ message: 'Browser already open' });
-  const { url, profile } = req.body;
+  const { url, profile, headless } = req.body;
+  // En Docker forzar headless true si no se especifica lo contrario
+  const isDocker = process.env.DOCKER_ENV === 'true' || process.env.DISPLAY === ':99';
+  const effectiveHeadless = headless !== undefined ? headless : isDocker;
   try {
-    manualBrowser = new BrowserManager({ headless: false });
+    manualBrowser = new BrowserManager({ headless: effectiveHeadless });
     if (profile) {
       await manualBrowser.launchWithProfile(profile);
     } else {
@@ -117,6 +123,16 @@ app.post('/api/run', async (req, res) => {
   runTaskInBackground(task, url, headless, profile).catch(err => console.error('Task error:', err));
 });
 
+app.post('/api/run/cua', async (req, res) => {
+  if (activeTask) return res.status(409).json({ error: 'A task is already running' });
+  const { task, url, headless = true, maxIterations = 30 } = req.body;
+  if (!task) return res.status(400).json({ error: 'Task description is required' });
+  activeTask = { task, url, mode: 'cua', startTime: Date.now() };
+  broadcast({ type: 'task_started', task: activeTask });
+  res.json({ message: 'CUA task started', task: activeTask });
+  runCuaTaskInBackground(task, url, headless, maxIterations).catch(err => console.error('CUA task error:', err));
+});
+
 async function runTaskInBackground(task, url, headless, profile) {
   const operator = new WebOperator({
     headless: headless !== false,
@@ -137,6 +153,31 @@ async function runTaskInBackground(task, url, headless, profile) {
     taskResult = { success: false, message: e.message, completedAt: Date.now(), task: activeTask?.task };
     broadcast({ type: 'task_error', error: e.message });
   } finally { activeTask = null; }
+}
+
+async function runCuaTaskInBackground(task, url, headless, maxIterations) {
+  const engine = new OperatorEngine({
+    maxIterations: parseInt(maxIterations) || 30,
+    screenshotDir: process.env.SCREENSHOT_DIR || '/tmp/opencode-screenshots'
+  });
+  try {
+    await engine.launch({ headless: headless !== false });
+    const result = await engine.runTask(task, url || null);
+    taskResult = {
+      ...result,
+      mode: 'cua',
+      completedAt: Date.now(),
+      task: activeTask?.task
+    };
+    if (result.screenshot) liveScreenshot = result.screenshot;
+    broadcast({ type: 'task_completed', result: taskResult });
+  } catch (e) {
+    taskResult = { success: false, message: e.message, mode: 'cua', completedAt: Date.now(), task: activeTask?.task };
+    broadcast({ type: 'task_error', error: e.message });
+  } finally {
+    activeTask = null;
+    try { await engine.close(); } catch {}
+  }
 }
 
 app.get('/api/status', (req, res) => { res.json({ running: !!activeTask, task: activeTask, lastResult: taskResult }); });
@@ -194,6 +235,34 @@ app.post('/api/cancel', (req, res) => {
   activeTask = null;
   broadcast({ type: 'task_cancelled' });
   res.json({ message: 'Task cancelled' });
+});
+
+// ─── Skills integration ──────────────────────────────────────────
+app.get('/api/skills/claro/status', (req, res) => res.json(claroSkill.getStatus()));
+
+app.post('/api/skills/claro/order', async (req, res) => {
+  const { order, options = {} } = req.body;
+  if (!order) return res.status(400).json({ error: 'Se requiere el campo "order"' });
+  try {
+    const result = await claroSkill.processOrder(order, options);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/skills/claro/run-pending', async (req, res) => {
+  try {
+    const result = await claroSkill.runPending(req.body?.options || {});
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/skills/preoperacional/status', (req, res) => res.json(preopSkill.getStatus()));
+
+app.post('/api/skills/preoperacional/run', async (req, res) => {
+  try {
+    const result = await preopSkill.runDaily(req.body?.options || {});
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 server.listen(PORT, () => {

@@ -3,21 +3,36 @@ import http from 'http';
 import { randomUUID } from 'crypto';
 
 const agents = new Map();
+const controllers = new Map();
 const WS_PORT = parseInt(process.env.AGENT_WS_PORT || '21291');
+const AUTH_TOKEN = process.env.AGENT_SERVER_TOKEN || '';
 const wss = new WebSocketServer({ noServer: true });
+
+function unauthorized(res) {
+  res.writeHead(401, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Unauthorized' }));
+}
 
 wss.on('connection', (ws, req) => {
   const agentName = req.headers['x-agent-name'] || 'PC-Desconocido';
   let agentId = req.headers['x-agent-id'] || randomUUID();
+  let isController = false;
+
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+    else clearInterval(pingInterval);
+  }, 30000);
 
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());
       if (msg.type === 'register') {
         if (msg.agentId) agentId = msg.agentId;
-        agents.set(agentId, { ws, name: msg.agentName || agentName, sysinfo: msg.sysinfo || {}, connectedAt: new Date() });
-        ws.send(JSON.stringify({ type: 'registered', agentId }));
-        console.log(`[agent-server] ✓ Agente registrado: ${agentId} (${agentName})`);
+        isController = (msg.sysinfo?.role === 'controller');
+        const registry = isController ? controllers : agents;
+        registry.set(agentId, { ws, name: msg.agentName || agentName, sysinfo: msg.sysinfo || {}, connectedAt: new Date() });
+        ws.send(JSON.stringify({ type: 'registered', agentId, role: isController ? 'controller' : 'agent' }));
+        console.log(`[agent-server] ✓ ${isController ? 'Controller' : 'Agente'} registrado: ${agentId} (${msg.agentName || agentName})`);
       }
       if (msg.type === 'result') {
         const pending = pendingRequests.get(msg.requestId);
@@ -26,12 +41,16 @@ wss.on('connection', (ws, req) => {
     } catch (err) { console.error('[agent-server] Error:', err.message); }
   });
 
-  ws.on('close', () => { agents.delete(agentId); console.log(`[agent-server] ✗ Agente desconectado: ${agentId}`); });
-
-  const pingInterval = setInterval(() => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
-    else clearInterval(pingInterval);
-  }, 30000);
+  ws.on('close', () => {
+    clearInterval(pingInterval);
+    if (isController) {
+      controllers.delete(agentId);
+      console.log(`[agent-server] ✗ Controller desconectado: ${agentId}`);
+    } else {
+      agents.delete(agentId);
+      console.log(`[agent-server] ✗ Agente desconectado: ${agentId}`);
+    }
+  });
 });
 
 const pendingRequests = new Map();
@@ -47,6 +66,10 @@ async function sendCommandToAgent(agentId, cmd, timeoutMs = 30000) {
   });
 }
 
+function listAgents() {
+  return [...agents.entries()].map(([id, a]) => ({ id, name: a.name, sysinfo: a.sysinfo, connectedAt: a.connectedAt }));
+}
+
 const apiServer = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${WS_PORT}`);
   res.setHeader('Content-Type', 'application/json');
@@ -54,7 +77,7 @@ const apiServer = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
   try {
     if (url.pathname === '/agents' && req.method === 'GET') {
-      const list = [...agents.entries()].map(([id, a]) => ({ id, name: a.name, sysinfo: a.sysinfo, connectedAt: a.connectedAt }));
+      const list = listAgents();
       res.writeHead(200); res.end(JSON.stringify(list)); return;
     }
     if (url.pathname.startsWith('/agents/') && req.method === 'POST') {
@@ -76,8 +99,17 @@ const apiServer = http.createServer(async (req, res) => {
 });
 
 apiServer.on('upgrade', (req, socket, head) => {
-  if (req.url === '/agent') wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
-  else socket.destroy();
+  if (req.url !== '/agent') { socket.destroy(); return; }
+  if (AUTH_TOKEN) {
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (token !== AUTH_TOKEN) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
 });
 
 apiServer.listen(WS_PORT, '0.0.0.0', () => {

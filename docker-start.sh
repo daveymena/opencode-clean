@@ -1,79 +1,297 @@
 #!/bin/bash
+set -o pipefail
 set +e
 
-echo ""
-echo "  ╔══════════════════════════════════════════════╗"
-echo "  ║     OpenCode Evolved — Iniciando en Docker   ║"
-echo "  ╚══════════════════════════════════════════════╝"
-echo ""
+# ============================================================
+# OpenCode Evolved — Docker Startup Orchestrator
+# Inicia todos los subsistemas en orden con supervisión ligera
+# ============================================================
 
-echo "[1/5] Iniciando pantalla virtual (Xvfb)..."
-Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp &
-sleep 2
-echo "  → Xvfb listo"
+# --- Configuración de puertos (NO cambiar sin actualizar Dockerfile/easypanel.yml) ---
+export PORT="${PORT:-3000}"                    # Proxy Web UI (expuesto por EasyPanel)
+export OPENCODE_PORT="${OPENCODE_PORT:-21294}" # OpenCode Engine interno
+export OPENCODE_INTERNAL_PORT="${OPENCODE_PORT}"
+export OPERATOR_API_PORT="${OPERATOR_API_PORT:-3001}"   # Web Operator API interna
+export WEB_OPERATOR_PORT="${OPERATOR_API_PORT}"
+export AGENT_WS_PORT="${AGENT_WS_PORT:-21291}"          # Agent Server (PC agents)
+export BRIDGE_PORT="${BRIDGE_PORT:-21295}"              # MiMoCode Bridge
+export MIMO_MCP_PORT="${MIMO_MCP_PORT:-21296}"         # MiMoCode MCP Server
+export VNC_PORT="${VNC_PORT:-5900}"
+export NOVNC_PORT="${NOVNC_PORT:-6080}"
+export DOCKER_ENV="true"
 
-echo "[2/5] Iniciando VNC + noVNC..."
-x11vnc -display :99 -nopw -listen localhost -xkb -forever -quiet 2>/dev/null &
-sleep 1
-websockify --web=/usr/share/novnc/ 0.0.0.0:6080 localhost:5900 >/dev/null 2>&1 &
-sleep 1
-echo "  → VNC listo en :5900, noVNC en :6080"
+# El proxy se conecta al agent-server DENTRO del mismo contenedor
+export AGENT_SERVER_URL="${AGENT_SERVER_URL:-ws://localhost:${AGENT_WS_PORT}/agent}"
 
-echo "[3/5] Iniciando OpenCode Engine..."
-OPENCODE_PORT=${OPENCODE_PORT:-21294}
+# Password de OpenCode para proxy / autenticación
+export OPENCODE_SERVER_PASSWORD="${OPENCODE_SERVER_PASSWORD:-}"
 
-if command -v opencode >/dev/null 2>&1; then
-  opencode serve --port $OPENCODE_PORT &
-  echo "  → Esperando OpenCode en :$OPENCODE_PORT..."
-  for i in $(seq 1 30); do
-    if nc -z localhost $OPENCODE_PORT 2>/dev/null; then
-      echo "  → OpenCode Engine listo"
-      break
+# Directorio de trabajo
+APP_DIR="/app"
+cd "$APP_DIR" || exit 1
+
+# Helper logs (definir antes de usar)
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+banner() {
+  echo ""
+  echo "  ╔══════════════════════════════════════════════╗"
+  echo "  ║     OpenCode Evolved — Iniciando en Docker   ║"
+  echo "  ╚══════════════════════════════════════════════╝"
+  echo ""
+}
+
+cleanup() {
+  log "Recibiendo señal de terminación, limpiando procesos..."
+  for pid in "${PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  done
+  sleep 2
+  for pid in "${PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  done
+  # Asegurar que no queden procesos huérfanos de playwright/chrome
+  pkill -f 'chrome' 2>/dev/null || true
+  pkill -f 'Xvfb' 2>/dev/null || true
+  exit 0
+}
+trap cleanup SIGINT SIGTERM EXIT
+
+wait_for_port() {
+  local host="$1" port="$2" label="$3" max_wait="${4:-60}"
+  log "Esperando $label en $host:$port (max ${max_wait}s)..."
+  for i in $(seq 1 "$max_wait"); do
+    if nc -z "$host" "$port" 2>/dev/null; then
+      log "  → $label listo"
+      return 0
     fi
     sleep 1
   done
-else
-  echo "  ⚠  OpenCode no encontrado — saltando engine"
+  log "  ⚠  $label NO respondió en $host:$port"
+  return 1
+}
+
+# Registro de PIDs para limpieza
+PIDS=()
+
+# Instalar dependencias de skills si hay proyectos montados
+if [ -x /app/skills/setup-skills.sh ]; then
+  log "Instalando dependencias de skills..."
+  bash /app/skills/setup-skills.sh >/tmp/setup-skills.log 2>&1 || true
 fi
 
-# Cambiamos el puerto del Web Operator API para evitar conflicto con el Proxy (3000)
-# Usaremos 3005 para la API del Operador
-OPERATOR_API_PORT=3005
-export OPERATOR_PORT=${OPERATOR_PORT:-3001}
-export API_SERVER_PORT=$OPERATOR_API_PORT
-
-echo "[4/5] Iniciando Web Operator..."
-cd /app/web-operator
-node api-server.js &
-WEB_PID=$!
-sleep 3
-if kill -0 $WEB_PID 2>/dev/null; then
-  echo "  → Web Operator listo en :3001"
-else
-  echo "  ⚠  Web Operator falló al iniciar (ver logs)"
-fi
-
-echo "[5/5] Iniciando Proxy Web UI..."
-cd /app/artifacts/opencode-ui
-export PORT=${PORT:-3000}
-export OPENCODE_PORT=${OPENCODE_PORT:-21294}
-export OPERATOR_PORT=${OPERATOR_PORT:-3001}
-export API_SERVER_PORT=${OPERATOR_PORT:-3001}
-node proxy.mjs &
-PROXY_PID=$!
+# Matar cualquier proceso previo que pudiera ocupar puertos
+log "Limpiando procesos previos..."
+pkill -f 'Xvfb :99' 2>/dev/null || true
+pkill -f 'x11vnc' 2>/dev/null || true
+pkill -f 'websockify' 2>/dev/null || true
+pkill -f 'opencode serve' 2>/dev/null || true
+pkill -f 'node agent-server.mjs' 2>/dev/null || true
+pkill -f 'node bridge-server.mjs' 2>/dev/null || true
+pkill -f 'node api-server.js' 2>/dev/null || true
+pkill -f 'node proxy.mjs' 2>/dev/null || true
 sleep 2
-if kill -0 $PROXY_PID 2>/dev/null; then
-  echo "  → Proxy listo en :${PORT}"
+
+banner
+
+# ============================================================
+# 1. Pantalla virtual
+# ============================================================
+log "[1/6] Iniciando pantalla virtual (Xvfb)..."
+Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+sleep 2
+if ! kill -0 "$PID" 2>/dev/null; then
+  log "  ✗ Xvfb falló al iniciar"; cat /tmp/xvfb.log; exit 1
+fi
+log "  → Xvfb listo en DISPLAY :99"
+
+# ============================================================
+# 2. VNC + noVNC
+# ============================================================
+log "[2/6] Iniciando VNC + noVNC..."
+x11vnc -display :99 -nopw -listen localhost -xkb -forever -quiet >/tmp/x11vnc.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+sleep 1
+
+websockify --web=/usr/share/novnc/ 0.0.0.0:"$NOVNC_PORT" localhost:"$VNC_PORT" >/tmp/websockify.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+sleep 1
+log "  → VNC listo en :$VNC_PORT, noVNC en :$NOVNC_PORT"
+
+# ============================================================
+# 3. OpenCode Engine (provee modelos locales / zen go)
+# ============================================================
+log "[3/6] Iniciando OpenCode Engine en puerto $OPENCODE_PORT..."
+if command -v opencode >/dev/null 2>&1; then
+  opencode serve --port "$OPENCODE_PORT" >/tmp/opencode.log 2>&1 &
+  PID=$!
+  PIDS+=("$PID")
+  if wait_for_port localhost "$OPENCODE_PORT" "OpenCode Engine" 60; then
+    log "  → OpenCode Engine listo"
+  else
+    log "  ⚠  OpenCode Engine no respondió (ver /tmp/opencode.log)"
+    tail -n 20 /tmp/opencode.log
+  fi
 else
-  echo "  ⚠  Proxy falló al iniciar (ver logs)"
+  log "  ⚠  Comando 'opencode' no encontrado — engine omitido"
 fi
 
-cd /app
+# ============================================================
+# 4. Agent Server (WebSocket hub para PC Agents)
+# ============================================================
+log "[4/6] Iniciando Agent Server en puerto $AGENT_WS_PORT..."
+node "$APP_DIR/agent-server.mjs" >/tmp/agent-server.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+if wait_for_port localhost "$AGENT_WS_PORT" "Agent Server" 30; then
+  log "  → Agent Server listo en :$AGENT_WS_PORT"
+else
+  log "  ⚠  Agent Server no respondió (ver /tmp/agent-server.log)"
+  tail -n 20 /tmp/agent-server.log
+fi
+
+# ============================================================
+# 5. Bridge Server (MiMoCode ↔ PC Agent)
+# ============================================================
+log "[5/6] Iniciando Bridge Server en puerto $BRIDGE_PORT..."
+node "$APP_DIR/bridge-server.mjs" >/tmp/bridge-server.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+if wait_for_port localhost "$BRIDGE_PORT" "Bridge Server" 30; then
+  log "  → Bridge Server listo en :$BRIDGE_PORT"
+else
+  log "  ⚠  Bridge Server no respondió (ver /tmp/bridge-server.log)"
+  tail -n 20 /tmp/bridge-server.log
+fi
+
+# ============================================================
+# 6. Web Operator API
+# ============================================================
+log "[6/6] Iniciando Web Operator API en puerto $OPERATOR_API_PORT..."
+cd "$APP_DIR/web-operator" || exit 1
+export OPERATOR_API_PORT
+export WEB_OPERATOR_PORT
+node api-server.js >/tmp/web-operator.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+cd "$APP_DIR" || exit 1
+if wait_for_port localhost "$OPERATOR_API_PORT" "Web Operator API" 30; then
+  log "  → Web Operator API listo en :$OPERATOR_API_PORT"
+else
+  log "  ⚠  Web Operator API no respondió (ver /tmp/web-operator.log)"
+  tail -n 20 /tmp/web-operator.log
+fi
+
+# ============================================================
+# 7. Scheduler de skills (preoperacional diario)
+# ============================================================
+log "[7/6] Iniciando Scheduler de skills..."
+node "$APP_DIR/skills/preoperacional-nova/scheduler.js" >/tmp/skills-scheduler.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+if kill -0 "$PID" 2>/dev/null; then
+  log "  → Scheduler de skills iniciado"
+else
+  log "  ⚠  Scheduler de skills falló al iniciar"
+fi
+
+# ============================================================
+# 8. Web UI (serve.js - UI standalone + APIs)
+# ============================================================
+log "[8/6] Iniciando Web UI en puerto $PORT..."
+
+# Set env vars for serve.js
+export FREEMODEL_API_KEY="${FREEMODEL_API_KEY:-}"
+export FREEMODEL_BASE_URL="${FREEMODEL_BASE_URL:-https://api.freemodel.dev/v1}"
+export FREEMODEL_MODEL="${FREEMODEL_MODEL:-gpt-4o}"
+export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+export OPERATOR_API_PORT="${OPERATOR_API_PORT:-3001}"
+export AGENT_WS_PORT="${AGENT_WS_PORT:-21291}"
+export OPENCODE_SERVER_PASSWORD="${OPENCODE_SERVER_PASSWORD:-}"
+
+node "$APP_DIR/serve.js" >/tmp/serve.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+if wait_for_port localhost "$PORT" "Web UI" 30; then
+  log "  → Web UI listo en :$PORT"
+else
+  log "  ⚠  Web UI no respondió (ver /tmp/serve.log)"
+  tail -n 20 /tmp/serve.log
+fi
+
+# ============================================================
+# 9. MiMoCode MCP Server
+# ============================================================
+log "[9/6] Iniciando MiMoCode MCP Server en puerto $MIMO_MCP_PORT..."
+node "$APP_DIR/mimo-mcp-server.mjs" >/tmp/mimo-mcp.log 2>&1 &
+PID=$!
+PIDS+=("$PID")
+if wait_for_port localhost "$MIMO_MCP_PORT" "MiMoCode MCP" 30; then
+  log "  → MiMoCode MCP Server listo en :$MIMO_MCP_PORT"
+else
+  log "  ⚠  MiMoCode MCP Server no respondió (ver /tmp/mimo-mcp.log)"
+  tail -n 20 /tmp/mimo-mcp.log
+fi
 
 echo ""
 echo "  ╔══════════════════════════════════════════════╗"
 echo "  ║          TODO LISTO EN EASYPANEL             ║"
+echo "  ╠══════════════════════════════════════════════╣"
+echo "  ║  Proxy UI:     http://0.0.0.0:$PORT          ║"
+echo "  ║  OpenCode:     http://localhost:$OPENCODE_PORT          ║"
+echo "  ║  Web Operator: http://localhost:$OPERATOR_API_PORT          ║"
+echo "  ║  Agent Server: ws://localhost:$AGENT_WS_PORT/agent      ║"
+echo "  ║  Bridge:       ws://localhost:$BRIDGE_PORT/mimo         ║"
+echo "  ║  MCP Server:   http://0.0.0.0:$MIMO_MCP_PORT             ║"
+echo "  ║  Skills:       /app/skills                   ║"
 echo "  ╚══════════════════════════════════════════════╝"
 echo ""
 
-wait
+# ============================================================
+# Supervisor ligero: reinicia procesos muertos y loguea estado
+# ============================================================
+log "Supervisor activo. Presiona Ctrl+C para detener."
+HEALTH_FILE="/tmp/opencode-health.json"
+echo '{"status":"starting","started":"'"$(date -Iseconds)"'"}' > "$HEALTH_FILE"
+
+LAST_HEALTH_EPOCH=0
+while true; do
+  sleep 10
+  ALIVE=0
+  DEAD=0
+  for pid in "${PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      ALIVE=$((ALIVE + 1))
+    else
+      DEAD=$((DEAD + 1))
+    fi
+  done
+
+  # Health check del proxy (evita que Docker/EasyPanel reinicie sin razón)
+  PROXY_UP=false
+  if curl -sf "http://localhost:$PORT/__health" >/dev/null 2>&1; then
+    PROXY_UP=true
+  fi
+
+  echo "{\"status\":\"running\",\"alive\":$ALIVE,\"dead\":$DEAD,\"proxy_up\":$PROXY_UP,\"checked\":\"$(date -Iseconds)\"}" > "$HEALTH_FILE"
+
+  if [ "$DEAD" -gt 0 ]; then
+    log "Aviso: $DEAD proceso(s) han terminado ($ALIVE vivos). Proxy UP=$PROXY_UP"
+  fi
+
+  if [ "$PROXY_UP" = false ] && [ "$ALIVE" -lt 3 ]; then
+    log "CRÍTICO: Proxy caído y pocos servicios vivos. Saliendo para que Docker reinicie..."
+    exit 1
+  fi
+done

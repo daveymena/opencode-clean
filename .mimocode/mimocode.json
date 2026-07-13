@@ -1,0 +1,48 @@
+{
+  "$schema": "https://mimo.xiaomi.com/mimocode/config.json",
+  "model": "openai/gpt-4o",
+
+  "model_groups": {
+    "lite": "openai/gpt-4o-mini",
+    "standard": {
+      "default": "openai/gpt-4o",
+      "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"]
+    }
+  },
+
+  "permission": {
+    "external_directory": {
+      "/workspace/**": "allow",
+      "/tmp/**": "allow",
+      "/app/**": "allow"
+    }
+  },
+
+  "mcp": {
+    "mimocode-pc": {
+      "type": "local",
+      "command": ["node", "/app/mimo-connector.mjs"],
+      "env": {
+        "BRIDGE_URL": "ws://localhost:21295/mimo"
+      }
+    },
+    "mimocode-bridge": {
+      "type": "remote",
+      "url": "http://localhost:21296/messages"
+    }
+  },
+
+  "skills": {
+    "paths": ["/app/skills"]
+  },
+
+  "compaction": {
+    "auto": true,
+    "tail_turns": 3,
+    "preserve_recent_tokens": 12000
+  },
+
+  "experimental": {
+    "mcp_timeout": 60000
+  }
+}

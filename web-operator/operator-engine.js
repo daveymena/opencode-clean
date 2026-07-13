@@ -2,8 +2,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import https from 'https';
-import http from 'http';
+import { callBestModel, analyzeScreenshot } from './ai-client.js';
 
 function loadEnv() {
   const paths = [
@@ -33,125 +32,7 @@ function loadEnv() {
   console.log('[env] .env not found');
 }
 
-class AIVisionClient {
-  constructor(config = {}) {
-    loadEnv();
-    this.copilotToken = this._loadCopilotToken();
-    this.freemodelKey = process.env.FREEMODEL_API_KEY || null;
-    this.freemodelUrl = process.env.FREEMODEL_BASE_URL || 'https://api.freemodel.dev/v1';
-    this.freemodelModel = process.env.FREEMODEL_MODEL || 'gpt-4o';
-    console.log(`[AI] FreeModel: ${this.freemodelKey ? 'CONFIGURED' : 'NOT SET'}`);
-    console.log(`[AI] Copilot: ${this.copilotToken ? 'CONFIGURED' : 'NOT SET'}`);
-  }
-
-  _loadCopilotToken() {
-    try {
-      const tokenFile = path.join(
-        process.env.USERPROFILE || process.env.HOME,
-        'Downloads', 'OpenCode-Limpio', '.env.copilot'
-      );
-      const content = fs.readFileSync(tokenFile, 'utf8');
-      const match = content.match(/GITHUB_COPILOT_TOKEN=(.+)/);
-      if (match) return match[1].trim();
-    } catch {}
-    return process.env.GITHUB_COPILOT_TOKEN || null;
-  }
-
-  async analyzeScreenshot(base64Image, question) {
-    if (this.copilotToken) {
-      try {
-        const result = await this._callCopilot(base64Image, question);
-        console.log(`[AI] Copilot respondió (${result.length} chars)`);
-        return result;
-      } catch (e) {
-        console.log(`[AI] Copilot falló: ${e.message}`);
-      }
-    }
-    if (this.freemodelKey) {
-      try {
-        const result = await this._callFreeModel(base64Image, question);
-        console.log(`[AI] FreeModel respondió (${result.length} chars)`);
-        return result;
-      } catch (e) {
-        console.log(`[AI] FreeModel falló: ${e.message}`);
-      }
-    }
-    return null;
-  }
-
-  async _callCopilot(base64Image, question) {
-    const body = JSON.stringify({
-      model: "gpt-4o",
-      max_tokens: 500,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image_url", image_url: { url: `data:image/png;base64,${base64Image}` } },
-          { type: "text", text: question }
-        ]
-      }]
-    });
-    return this._httpsPost(
-      "https://api.githubcopilot.com/chat/completions",
-      {
-        "Authorization": `Bearer ${this.copilotToken}`,
-        "Editor-Version": "vscode/1.96.0",
-        "Content-Type": "application/json"
-      },
-      body
-    );
-  }
-
-  async _callFreeModel(base64Image, question) {
-    const body = JSON.stringify({
-      model: this.freemodelModel,
-      max_tokens: 500,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image_url", image_url: { url: `data:image/png;base64,${base64Image}` } },
-          { type: "text", text: question }
-        ]
-      }]
-    });
-    const url = this.freemodelUrl.endsWith("/v1")
-      ? `${this.freemodelUrl}/chat/completions`
-      : `${this.freemodelUrl}/v1/chat/completions`;
-    return this._httpsPost(url, {
-      "Authorization": `Bearer ${this.freemodelKey}`,
-      "Content-Type": "application/json"
-    }, body);
-  }
-
-  _httpsPost(urlStr, headers, bodyStr) {
-    return new Promise((resolve, reject) => {
-      const u = new URL(urlStr);
-      const opts = {
-        hostname: u.hostname,
-        port: u.port || 443,
-        path: u.pathname + u.search,
-        method: "POST",
-        headers: { ...headers, "Content-Length": Buffer.byteLength(bodyStr) }
-      };
-      const mod = u.protocol === "https:" ? https : http;
-      let data = "";
-      const req = mod.request(opts, r => {
-        r.on("data", c => data += c);
-        r.on("end", () => {
-          try {
-            const json = JSON.parse(data);
-            if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
-            resolve(json.choices?.[0]?.message?.content || JSON.stringify(json));
-          } catch { resolve(data); }
-        });
-      });
-      req.on("error", reject);
-      req.setTimeout(8000, () => { req.destroy(); reject(new Error("Timeout")); });
-      req.write(bodyStr);
-      req.end();
-    });
-  }
-}
+// AI vision se provee a través de ./ai-client.js (modelos OpenCode / Copilot / FreeModel)
 
 class HeuristicVerifier {
   async verify(action, beforeState, afterState) {
@@ -231,19 +112,39 @@ export class OperatorEngine {
     this.heuristicVerifier = new HeuristicVerifier();
     this.siteMemory = new SiteMemory();
     this.screenshotCache = new ScreenshotCache();
-    this.aiVision = new AIVisionClient();
     this.iterationCount = 0;
     this.aiCallCount = 0;
     this._elements = [];
   }
 
-  async launch() {
+  async launch(options = {}) {
     try {
+      // En Docker siempre headless; en local se puede forzar con options.headless
+      const isDocker = fs.existsSync('/.dockerenv') || process.env.DOCKER_ENV === 'true';
+      const headless = options.headless !== undefined ? options.headless : (isDocker ? true : false);
+
       const chromePaths = [
+        process.env.PLAYWRIGHT_CHROMIUM_PATH,
         'C:/Program Files/Google/Chrome/Application/chrome.exe',
         'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-        '/mnt/c/Program Files/Google/Chrome/Application/chrome.exe'
-      ];
+        '/mnt/c/Program Files/Google/Chrome/Application/chrome.exe',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome'
+      ].filter(Boolean);
+
+      let launchOptions = {
+        headless,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--disable-blink-features=AutomationControlled'
+        ]
+      };
+
       let chromePath = null;
       for (const p of chromePaths) {
         if (fs.existsSync(p)) {
@@ -251,21 +152,37 @@ export class OperatorEngine {
           break;
         }
       }
-      if (chromePath) {
-        this.browser = await chromium.launch({
-          headless: false,
-          executablePath: chromePath
-        });
-      } else {
-        this.browser = await chromium.launch({ headless: false });
-      }
+      if (chromePath) launchOptions.executablePath = chromePath;
+
+      this.browser = await chromium.launch(launchOptions);
       const context = await this.browser.newContext({
-        viewport: { width: 1920, height: 1080 }
+        viewport: { width: 1920, height: 1080 },
+        locale: 'es-CO',
+        timezoneId: 'America/Bogota'
       });
       this.page = await context.newPage();
+      console.log(`[OperatorEngine] Browser launched (headless: ${headless}, chrome: ${chromePath || 'playwright bundled'})`);
       return this;
     } catch (e) {
       console.error('Failed to launch browser:', e.message);
+      throw e;
+    }
+  }
+
+  async connectToExisting(cdpUrl = 'http://localhost:9222') {
+    try {
+      console.log(`[OperatorEngine] Conectando a Chrome existente via CDP: ${cdpUrl}`);
+      this.browser = await chromium.connectOverCDP(cdpUrl);
+      const contexts = this.browser.contexts();
+      if (!contexts.length) throw new Error('No hay contextos de navegador disponibles en CDP');
+      const context = contexts[0];
+      const pages = context.pages();
+      this.page = pages.find(p => p.url().includes('facebook.com')) || pages[0] || await context.newPage();
+      await this.page.bringToFront();
+      console.log(`[OperatorEngine] Conectado. Pagina actual: ${this.page.url()}`);
+      return this;
+    } catch (e) {
+      console.error('Failed to connect to existing browser:', e.message);
       throw e;
     }
   }
@@ -497,7 +414,7 @@ Responde EXACTAMENTE con UNA de estas acciones:
 - FAIL "razón" — no se puede completar`;
 
     try {
-      const aiResponse = await this.aiVision.analyzeScreenshot(screenshotBase64, question);
+      const aiResponse = await analyzeScreenshot(screenshotBase64, task, { url, title });
       this.aiCallCount++;
       if (aiResponse) {
         console.log(`[AI] ${aiResponse.split('\n')[0].slice(0, 120)}...`);
@@ -549,61 +466,100 @@ Responde EXACTAMENTE con UNA de estas acciones:
 
   // ─── Main task loop (CUA-style) ──────────────────────────────────────
 
-  async runTask(task, startUrl) {
+  async runTask(task, startUrl, options = {}) {
     console.log(`\n=== CUA ENGINE ===`);
     console.log(`Task: ${task}`);
     console.log(`URL: ${startUrl}`);
 
-    await this.page.goto(startUrl, { waitUntil: 'domcontentloaded' });
-    await this.page.waitForTimeout(2000);
+    if (!this.page) await this.launch(options);
+
+    if (startUrl) {
+      await this.page.goto(startUrl, { waitUntil: 'domcontentloaded' });
+      await this.page.waitForTimeout(2000);
+    }
 
     const history = [];
+    let completed = false;
+    let reason = 'max iterations reached';
 
     for (let i = 0; i < this.config.maxIterations; i++) {
       this.iterationCount++;
       const iterationStart = Date.now();
 
-      // 1. Get annotated screenshot with bounding boxes
-      const { base64: screenshotBase64, elements } = await this.getAnnotatedScreenshot(`iter_${i}`);
+      try {
+        // 1. Get annotated screenshot with bounding boxes
+        const { base64: screenshotBase64, elements } = await this.getAnnotatedScreenshot(`iter_${i}`);
 
-      // 2. Get page state
-      const beforeState = await this.getState();
+        // 2. Get page state
+        const beforeState = await this.getState();
 
-      // 3. Think: AI analyzes annotated screenshot
-      const action = await this.thinkBeforeAct(screenshotBase64, elements, task, history);
+        // 3. Think: AI analyzes annotated screenshot
+        const action = await this.thinkBeforeAct(screenshotBase64, elements, task, history);
 
-      if (!action) {
-        console.log(`[${i}] No action, waiting...`);
-        await this.page.waitForTimeout(1000);
-        continue;
+        if (!action) {
+          console.log(`[${i}] No action, waiting...`);
+          await this.page.waitForTimeout(1000);
+          continue;
+        }
+
+        if (action.type === 'done') {
+          completed = true;
+          reason = action.reason || 'task completed';
+          console.log(`✓ Task completed in ${i} iterations`);
+          break;
+        }
+
+        // 4. Execute action
+        const result = await this.executeAction(action);
+
+        // 5. Verify
+        await this.page.waitForTimeout(500);
+        const afterState = await this.getState();
+        const verification = await this.heuristicVerifier.verify(action, beforeState, afterState);
+
+        history.push({
+          iteration: i,
+          action: `${action.type}${action.elementId != null ? `[${action.elementId}]` : ''}`,
+          success: verification.success,
+          url: afterState.url,
+          time: Date.now() - iterationStart
+        });
+
+        console.log(`[${i}] ${history[history.length - 1].action} → ${verification.success ? '✓' : '✗'} (${Date.now() - iterationStart}ms)`);
+      } catch (err) {
+        console.error(`[${i}] Iteration error:`, err.message);
+        history.push({ iteration: i, error: err.message, time: Date.now() - iterationStart });
+        if (err.message && err.message.includes('Target page, context or browser has been closed')) {
+          reason = 'browser closed';
+          break;
+        }
       }
-
-      if (action.type === 'done') {
-        console.log(`✓ Task completed in ${i} iterations`);
-        break;
-      }
-
-      // 4. Execute action
-      const result = await this.executeAction(action);
-
-      // 5. Verify
-      await this.page.waitForTimeout(500);
-      const afterState = await this.getState();
-      const verification = await this.heuristicVerifier.verify(action, beforeState, afterState);
-
-      history.push({
-        iteration: i,
-        action: `${action.type}${action.elementId != null ? `[${action.elementId}]` : ''}`,
-        success: verification.success,
-        url: afterState.url,
-        time: Date.now() - iterationStart
-      });
-
-      console.log(`[${i}] ${history[history.length - 1].action} → ${verification.success ? '✓' : '✗'} (${Date.now() - iterationStart}ms)`);
     }
+
+    // Final screenshot
+    let finalScreenshot = null;
+    try {
+      const final = await this.getAnnotatedScreenshot('final');
+      finalScreenshot = final.base64;
+    } catch {}
 
     console.log(`\nIterations: ${this.iterationCount}`);
     console.log(`AI Calls: ${this.aiCallCount}`);
-    return { iterations: this.iterationCount, aiCalls: this.aiCallCount };
+    return {
+      success: completed,
+      completed,
+      reason,
+      iterations: this.iterationCount,
+      aiCalls: this.aiCallCount,
+      history,
+      screenshot: finalScreenshot,
+      url: this.page?.url() || null
+    };
+  }
+
+  async close() {
+    try { await this.browser?.close(); } catch {}
+    this.browser = null;
+    this.page = null;
   }
 }

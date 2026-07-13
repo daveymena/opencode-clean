@@ -38,12 +38,12 @@ fi
 
 echo "[4/5] Iniciando Web Operator..."
 cd /app/web-operator
-OPERATOR_PORT=${OPERATOR_PORT:-3001}
+export WEB_OPERATOR_PORT=3001
 node api-server.js &
 WEB_PID=$!
 sleep 3
 if kill -0 $WEB_PID 2>/dev/null; then
-  echo "  → Web Operator listo en :${OPERATOR_PORT}"
+  echo "  → Web Operator listo en :3001"
 else
   echo "  ⚠  Web Operator falló al iniciar (ver logs)"
 fi

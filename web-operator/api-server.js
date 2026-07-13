@@ -9,7 +9,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.OPERATOR_PORT || process.env.PORT || 3001;
+const PORT = process.env.WEB_OPERATOR_PORT || 3001;
 
 const app = express();
 const server = createServer(app);

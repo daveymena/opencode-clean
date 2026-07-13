@@ -134,25 +134,32 @@ log "  → VNC listo en :$VNC_PORT, noVNC en :$NOVNC_PORT"
 log "[3/6] Configurando providers de OpenCode..."
 OPENCODE_CONFIG_DIR="/root/.config/opencode"
 mkdir -p "$OPENCODE_CONFIG_DIR"
+CONFIG_FILE="$OPENCODE_CONFIG_DIR/opencode.jsonc"
+# Build providers JSON safely
+PROVIDERS="{"
+SEP=""
+if [ -n "$OPENAI_API_KEY" ]; then
+  PROVIDERS="${PROVIDERS}${SEP}\"openai\":{\"apiKey\":\"$OPENAI_API_KEY\"}"
+  SEP=","
+fi
 if [ -n "$GITHUB_COPILOT_TOKEN" ]; then
-  cat > "$OPENCODE_CONFIG_DIR/opencode.jsonc" << EOF
+  PROVIDERS="${PROVIDERS}${SEP}\"github-copilot\":{\"token\":\"$GITHUB_COPILOT_TOKEN\"}"
+  SEP=","
+  log "  → GitHub Copilot configurado"
+fi
+PROVIDERS="${PROVIDERS}}"
+if [ "$PROVIDERS" != "{}" ]; then
+  cat > "$CONFIG_FILE" << EOF
 {
   "\$schema": "https://opencode.ai/config.json",
   "model": "opencode-go/deepseek-v4-flash",
-  "provider": {
-    "github-copilot": {
-      "token": "$GITHUB_COPILOT_TOKEN"
-    }
-  },
-  "permission": {
-    "bash": { "/**": "allow" },
-    "read": { "/**": "allow" },
-    "write": { "/**": "allow" },
-    "edit": { "/**": "allow" }
-  }
+  "provider": $PROVIDERS,
+  "permission": { "bash": { "/**": "allow" }, "read": { "/**": "allow" }, "write": { "/**": "allow" }, "edit": { "/**": "allow" } }
 }
 EOF
-  log "  → GitHub Copilot configurado como provider"
+  log "  → Config creada con providers disponibles"
+else
+  log "  ⚠  Sin API keys — OpenCode no tendrá modelos"
 fi
 log "[3/6] Iniciando OpenCode Engine en puerto $OPENCODE_PORT..."
 if command -v opencode >/dev/null 2>&1; then

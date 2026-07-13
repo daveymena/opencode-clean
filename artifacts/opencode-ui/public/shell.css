@@ -170,3 +170,228 @@ pre, code { background: rgba(0,0,0,0.4) !important; border: 1px solid rgba(255,2
 .oc-ib-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
 .oc-ib-btn svg { width: 16px; height: 16px; }
 #oc-internal-iframe { flex-grow: 1; width: 100%; border: none; background: #fff; }
+
+/* ─── Agent Button ─────────────────────────────────────────────── */
+#oc-agent-btn {
+  position: fixed; bottom: 24px; right: 200px; z-index: 99998;
+  display: flex; align-items: center; gap: 7px; padding: 9px 16px;
+  background: linear-gradient(135deg, rgba(34,197,94,0.85), rgba(22,163,74,0.85));
+  backdrop-filter: blur(16px); border: 1px solid rgba(34,197,94,0.4);
+  border-radius: 20px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 20px rgba(34,197,94,0.35);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+}
+#oc-agent-btn:hover { transform: translateY(-1px); }
+#oc-agent-btn svg { width: 16px; height: 16px; stroke: #fff; }
+
+/* ─── Agent Panel ──────────────────────────────────────────────── */
+#oc-agent-panel {
+  position: fixed; bottom: 72px; right: 200px; z-index: 99997;
+  width: 380px; max-height: 80vh; overflow-y: auto;
+  background: rgba(10,10,18,0.95); backdrop-filter: blur(24px);
+  border: 1px solid rgba(34,197,94,0.3); border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  display: none; flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+}
+#oc-agent-panel.open { display: flex; }
+
+.oc-agent-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.07);
+  font-size: 12px; font-weight: 600; color: rgba(220,220,255,0.9);
+}
+.oc-agent-header button { background: none; border: none; color: rgba(200,200,230,0.5); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; }
+.oc-agent-title { display: flex; align-items: center; gap: 8px; }
+
+.oc-agent-status {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 11px; color: rgba(180,180,220,0.8);
+}
+.oc-agent-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
+.oc-agent-dot.green { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+.oc-agent-dot.red { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+
+.oc-agent-quick {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.oc-agent-qbtn {
+  padding: 8px 10px; background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+  color: rgba(200,200,230,0.8); font-size: 11px; cursor: pointer;
+  transition: all 0.15s;
+}
+.oc-agent-qbtn:hover { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.3); }
+
+.oc-agent-cmd-input {
+  display: flex; gap: 6px; padding: 10px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.oc-agent-cmd-input input {
+  flex: 1; padding: 8px 12px; background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+  color: rgba(220,220,255,0.9); font-size: 12px; outline: none;
+}
+.oc-agent-cmd-input button {
+  padding: 8px 14px; background: linear-gradient(135deg, #22c55e, #16a34a);
+  border: none; border-radius: 8px; color: #fff; font-size: 12px;
+  font-weight: 600; cursor: pointer;
+}
+
+.oc-agent-history {
+  padding: 10px 16px; max-height: 200px; overflow-y: auto;
+  font-family: 'Fira Code', 'Consolas', monospace; font-size: 10px;
+}
+.oc-agent-entry { padding: 4px 8px; margin-bottom: 4px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
+.oc-agent-pending { color: rgba(180,180,220,0.6); background: rgba(255,255,255,0.02); }
+.oc-agent-success { color: #22c55e; background: rgba(34,197,94,0.08); }
+.oc-agent-error { color: #ef4444; background: rgba(239,68,68,0.08); }
+
+/* ─── Voice Button ─────────────────────────────────────────────── */
+#oc-voice-btn {
+  position: fixed; bottom: 24px; right: 370px; z-index: 99998;
+  display: flex; align-items: center; gap: 7px; padding: 9px 16px;
+  background: linear-gradient(135deg, rgba(239,68,68,0.85), rgba(220,38,38,0.85));
+  backdrop-filter: blur(16px); border: 1px solid rgba(239,68,68,0.4);
+  border-radius: 20px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 20px rgba(239,68,68,0.35);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+}
+#oc-voice-btn:hover { transform: translateY(-1px); }
+#oc-voice-btn svg { width: 16px; height: 16px; stroke: #fff; }
+.oc-voice-pulse {
+  display: none; width: 10px; height: 10px; background: #ef4444;
+  border-radius: 50%; animation: oc-pulse 1s ease-in-out infinite;
+}
+@keyframes oc-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+
+/* ─── Vision Badge ─────────────────────────────────────────────── */
+.oc-vision-title { display: flex; align-items: center; gap: 8px; }
+.oc-vision-badge { font-size: 9px; color: rgba(139,92,246,0.8); background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.2); border-radius: 4px; padding: 1px 6px; }
+.oc-vision-how { padding: 8px 16px; font-size: 11px; color: rgba(180,180,220,0.6); border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+/* ─── Live Vision Button ───────────────────────────────────────── */
+#oc-live-vision-btn {
+  position: fixed; bottom: 24px; right: 540px; z-index: 99998;
+  display: flex; align-items: center; gap: 7px; padding: 9px 16px;
+  background: linear-gradient(135deg, rgba(234,179,8,0.85), rgba(202,138,4,0.85));
+  backdrop-filter: blur(16px); border: 1px solid rgba(234,179,8,0.4);
+  border-radius: 20px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 20px rgba(234,179,8,0.35);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+}
+#oc-live-vision-btn:hover { transform: translateY(-1px); }
+#oc-live-vision-btn svg { width: 16px; height: 16px; stroke: #fff; }
+.oc-lv-pulse { width: 8px; height: 8px; background: #fbbf24; border-radius: 50%; }
+
+/* ─── Live Vision Panel ────────────────────────────────────────── */
+#oc-live-vision-panel {
+  position: fixed; top: 40px; right: 16px; z-index: 99997;
+  width: 420px; max-height: 90vh; overflow-y: auto;
+  background: rgba(10,10,18,0.97); backdrop-filter: blur(24px);
+  border: 1px solid rgba(234,179,8,0.3); border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  display: none; flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+}
+#oc-live-vision-panel.open { display: flex; }
+
+.oc-lv-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.oc-lv-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #fbbf24; }
+.oc-lv-header button { background: none; border: none; color: rgba(200,200,230,0.5); cursor: pointer; font-size: 14px; }
+.oc-lv-live-dot { width: 8px; height: 8px; background: #666; border-radius: 50%; }
+.oc-lv-live-dot.active { background: #ef4444; animation: oc-lv-blink 1s infinite; }
+@keyframes oc-lv-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.oc-lv-viewer {
+  position: relative; width: 100%; aspect-ratio: 16/9;
+  background: #000; border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.oc-lv-viewer img { width: 100%; height: 100%; object-fit: contain; }
+.oc-lv-overlay {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4);
+  font-size: 14px;
+}
+
+.oc-lv-controls {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.oc-lv-fps { display: flex; align-items: center; gap: 4px; font-size: 11px; color: rgba(180,180,220,0.7); }
+.oc-lv-fps-btn {
+  padding: 4px 8px; background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 6px;
+  color: rgba(200,200,230,0.7); font-size: 10px; cursor: pointer;
+}
+.oc-lv-fps-btn.active { background: rgba(234,179,8,0.2); border-color: rgba(234,179,8,0.4); color: #fbbf24; }
+.oc-lv-btn-start {
+  padding: 6px 14px; background: linear-gradient(135deg, #22c55e, #16a34a);
+  border: none; border-radius: 8px; color: #fff; font-size: 11px;
+  font-weight: 600; cursor: pointer;
+}
+.oc-lv-btn-stop {
+  padding: 6px 14px; background: linear-gradient(135deg, #ef4444, #dc2626);
+  border: none; border-radius: 8px; color: #fff; font-size: 11px;
+  font-weight: 600; cursor: pointer;
+}
+.oc-lv-btn-capture {
+  padding: 6px 14px; background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+  color: rgba(220,220,255,0.8); font-size: 11px; cursor: pointer;
+}
+
+.oc-lv-analysis { padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.oc-lv-analysis-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; font-weight: 600; color: rgba(220,220,255,0.9); }
+.oc-lv-btn-analyze {
+  padding: 4px 10px; background: rgba(139,92,246,0.2);
+  border: 1px solid rgba(139,92,246,0.3); border-radius: 6px;
+  color: #8b5cf6; font-size: 10px; cursor: pointer;
+}
+.oc-lv-analysis-content {
+  font-size: 11px; line-height: 1.6; color: rgba(200,200,230,0.8);
+  max-height: 150px; overflow-y: auto; white-space: pre-wrap;
+}
+.oc-lv-model-badge {
+  display: inline-block; margin-top: 6px; padding: 2px 8px;
+  background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.25);
+  border-radius: 4px; font-size: 9px; color: #8b5cf6;
+}
+
+.oc-lv-commands { padding: 10px 16px; }
+.oc-lv-cmd-header { font-size: 11px; font-weight: 600; color: rgba(180,180,220,0.7); margin-bottom: 8px; }
+.oc-lv-cmd-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.oc-lv-cmd {
+  padding: 5px 10px; background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 6px;
+  color: rgba(200,200,230,0.7); font-size: 10px; cursor: pointer;
+}
+.oc-lv-cmd:hover { background: rgba(234,179,8,0.15); border-color: rgba(234,179,8,0.3); }
+.oc-lv-custom-cmd { display: flex; gap: 6px; }
+.oc-lv-custom-cmd input {
+  flex: 1; padding: 6px 10px; background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 6px;
+  color: rgba(220,220,255,0.9); font-size: 11px; outline: none;
+}
+.oc-lv-custom-cmd button {
+  padding: 6px 12px; background: linear-gradient(135deg, #eab308, #ca8a04);
+  border: none; border-radius: 6px; color: #fff; font-size: 11px;
+  font-weight: 600; cursor: pointer;
+}
+
+/* ─── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #oc-agent-btn { right: 16px; bottom: 80px; }
+  #oc-voice-btn { right: 16px; bottom: 16px; }
+  #oc-live-vision-btn { right: 16px; bottom: 140px; }
+  #oc-agent-panel, #oc-vision-panel, #oc-live-vision-panel { width: calc(100vw - 32px); right: 16px; }
+}

@@ -301,8 +301,23 @@
     sse.addEventListener("open_url", (e) => { try { const data = JSON.parse(e.data); openUrlInIframe(data.url); } catch {} });
   }
 
+  function loadScript(src) {
+    if (document.querySelector(`script[src="${src}"]`)) return;
+    const s = document.createElement("script");
+    s.src = src;
+    document.head.appendChild(s);
+  }
+
   function tryInit() {
-    try { injectHeader(); injectVisionButton(); initInternalBrowser(); } catch (e) { console.log('[shell] Esperando que OpenCode cargue...', e.message); }
+    try {
+      injectHeader();
+      injectVisionButton();
+      initInternalBrowser();
+      // Load agent, voice, and live vision modules
+      loadScript("/__shell/agents.js");
+      loadScript("/__shell/voice.js");
+      loadScript("/__shell/live-vision.js");
+    } catch (e) { console.log('[shell] Esperando que OpenCode cargue...', e.message); }
   }
 
   function initWhenReady() {

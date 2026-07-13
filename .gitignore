@@ -1,6 +1,8 @@
 node_modules/
 .chrome-session/
+.chrome-debug/
 .site-memory/
+.kiro/
 *.log
 .env
 .env.copilot
@@ -9,3 +11,9 @@ build/
 .DS_Store
 package-lock.json
 pnpm-lock.yaml
+
+# Screenshots / PNG (son artifacts temporales)
+web-operator/*.png
+
+# Sesiones de Chrome
+web-operator/.chrome-session-*/

@@ -4,6 +4,7 @@ import morgan from 'morgan';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { WebOperator } from './operator.js';
+import { BrowserManager } from './browser.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,6 +25,8 @@ let taskResult = null;
 let wsClients = [];
 let liveScreenshot = null;
 let liveAction = '';
+let manualBrowser = null;
+let manualPage = null;
 
 function broadcast(data) {
   const msg = JSON.stringify(data);
@@ -40,19 +43,84 @@ wss.on('connection', (ws) => {
 
 app.get('/api/health', (req, res) => { res.json({ status: 'ok', taskRunning: !!activeTask, lastResult: !!taskResult }); });
 
+// --- Control Manual (YO decido, web-operator ejecuta) ---
+app.post('/api/browser/open', async (req, res) => {
+  if (manualBrowser) return res.json({ message: 'Browser already open' });
+  const { url, profile } = req.body;
+  try {
+    manualBrowser = new BrowserManager({ headless: false });
+    if (profile) {
+      await manualBrowser.launchWithProfile(profile);
+    } else {
+      await manualBrowser.launch();
+    }
+    manualPage = manualBrowser.page;
+    if (url) await manualBrowser.navigate(url);
+    const info = await manualBrowser.getPageInfo();
+    const screenshot = await manualBrowser.takeScreenshot();
+    res.json({ message: 'Browser opened', url: info.url, title: info.title, screenshot });
+    console.log('  [Manual] Browser opened');
+  } catch (e) {
+    manualBrowser = null; manualPage = null;
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/browser', async (req, res) => {
+  if (!manualBrowser || !manualPage) return res.status(404).json({ error: 'No browser open' });
+  try {
+    const info = await manualBrowser.getPageInfo();
+    const screenshot = await manualBrowser.takeScreenshot();
+    const text = await manualBrowser.extractText();
+    res.json({ url: info.url, title: info.title, screenshot, text: text.slice(0, 3000) });
+  } catch (e) { res.json({ error: e.message }); }
+});
+
+app.post('/api/browser/action', async (req, res) => {
+  if (!manualBrowser) return res.status(404).json({ error: 'No browser open' });
+  const { type, target, value } = req.body;
+  if (!type) return res.status(400).json({ error: 'Action type required' });
+  try {
+    let result;
+    switch (type.toUpperCase()) {
+      case 'CLICK': result = await manualBrowser.clickElement(target); break;
+      case 'TYPE': result = await manualBrowser.typeText(value, target); break;
+      case 'SCROLL': await manualBrowser.scroll(value || 'down'); result = true; break;
+      case 'NAVIGATE': await manualBrowser.navigate(target); result = true; break;
+      case 'WAIT': await manualBrowser.delay(parseInt(value) || 2000); result = true; break;
+      default: return res.status(400).json({ error: `Unknown action: ${type}` });
+    }
+    await manualBrowser.delay(500);
+    const info = await manualBrowser.getPageInfo();
+    const screenshot = await manualBrowser.takeScreenshot();
+    const text = await manualBrowser.extractText();
+    res.json({ success: !!result, url: info.url, title: info.title, screenshot, text: text.slice(0, 3000) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/browser/close', async (req, res) => {
+  if (!manualBrowser) return res.json({ message: 'No browser to close' });
+  try {
+    await manualBrowser.close();
+  } catch {}
+  manualBrowser = null; manualPage = null;
+  res.json({ message: 'Browser closed' });
+});
+
 app.post('/api/run', async (req, res) => {
   if (activeTask) return res.status(409).json({ error: 'A task is already running' });
-  const { task, url, headless } = req.body;
+  const { task, url, headless, profile } = req.body;
   if (!task) return res.status(400).json({ error: 'Task description is required' });
   activeTask = { task, url, startTime: Date.now() };
   broadcast({ type: 'task_started', task: activeTask });
   res.json({ message: 'Task started', task: activeTask });
-  runTaskInBackground(task, url, headless).catch(err => console.error('Task error:', err));
+  runTaskInBackground(task, url, headless, profile).catch(err => console.error('Task error:', err));
 });
 
-async function runTaskInBackground(task, url, headless) {
+async function runTaskInBackground(task, url, headless, profile) {
   const operator = new WebOperator({
     headless: headless !== false,
+    profile: profile || null,
     verbose: true,
     onMessage: (msg) => {
       if (msg.screenshot) liveScreenshot = msg.screenshot;

@@ -1,11 +1,13 @@
 import express from "express";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { createServer } from "http";
+import { WebSocket } from "ws";
 import path from "path";
 import { fileURLToPath } from "url";
 import https from "https";
 import http from "http";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import os from "os";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -143,7 +145,8 @@ app.get("/__health", (req, res) => {
 if (AUTH_PASS) {
   app.use((req, res, next) => {
     if (req.path.startsWith("/__shell") || req.path === "/__vision" ||
-        req.path === "/__login" || req.path === "/__logout" || req.path === "/__health") return next();
+        req.path === "/__login" || req.path === "/__logout" || req.path === "/__health" ||
+        req.path.startsWith("/api/agent")) return next();
     if (!isAuthenticated(req)) return res.redirect("/__login");
     next();
   });
@@ -187,7 +190,237 @@ app.post("/__vision", async (req, res) => {
       return res.json({ description: desc, model: "gemini-flash" });
     } catch (e) { console.error("[vision] Gemini falló:", e.message); }
   }
+  // GitHub Copilot fallback
+  try {
+    const desc = await callCopilotVision(base64, mime, question);
+    return res.json({ description: desc, model: "github-copilot/gpt-4o" });
+  } catch (e) { console.error("[vision] Copilot falló:", e.message); }
   return res.status(503).json({ error: "No hay API key de visión disponible" });
+});
+
+// ─── GitHub Copilot Vision ───────────────────────────────────────
+const COPILOT_TOKEN_FILE = path.join(os.homedir(), "Downloads", "OpenCode-Limpio", ".env.copilot");
+
+function getCopilotToken() {
+  try {
+    const content = readFileSync(COPILOT_TOKEN_FILE, "utf8");
+    const match = content.match(/GITHUB_COPILOT_TOKEN=(.+)/);
+    return match ? match[1].trim() : null;
+  } catch { return null; }
+}
+
+async function callCopilotVision(base64, mime, question) {
+  const token = getCopilotToken();
+  if (!token) throw new Error("No hay token de Copilot");
+  const res = await httpsPost(
+    "https://api.githubcopilot.com/chat/completions",
+    {
+      "Authorization": `Bearer ${token}`,
+      "Editor-Version": "vscode/1.96.0",
+      "Editor-Plugin-Version": "copilot/1.250.0",
+      "Openai-Organization": "github-copilot",
+      "Copilot-Integration-Id": "vscode-chat"
+    },
+    {
+      model: "gpt-4o", max_tokens: 1024,
+      messages: [{ role: "user", content: [
+        { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } },
+        { type: "text", text: question }
+      ]}]
+    }
+  );
+  if (res.error) throw new Error(res.error.message || JSON.stringify(res.error));
+  return res.choices?.[0]?.message?.content || JSON.stringify(res);
+}
+
+// ─── Agent Control API ────────────────────────────────────────────
+let agentWs = null;
+let agentInfo = null;
+const pendingCommands = new Map();
+
+// WebSocket connection to agent-server
+function connectToAgentServer() {
+  const agentServerUrl = process.env.AGENT_SERVER_URL || "ws://localhost:21291/agent";
+  try {
+    const ws = new WebSocket(agentServerUrl);
+    ws.on("open", () => console.log("[agent-api] Conectado a agent-server"));
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "result" && msg.requestId) {
+          const pending = pendingCommands.get(msg.requestId);
+          if (pending) { pending.resolve(msg.result); pendingCommands.delete(msg.requestId); }
+        }
+        if (msg.type === "registered") {
+          agentInfo = { id: msg.agentId, connected: true };
+          console.log(`[agent-api] Agente registrado: ${msg.agentId}`);
+        }
+      } catch {}
+    });
+    ws.on("close", () => {
+      agentInfo = null;
+      console.log("[agent-api] Desconectado. Reconectando en 5s...");
+      setTimeout(connectToAgentServer, 5000);
+    });
+    ws.on("error", (err) => console.error("[agent-api] Error:", err.message));
+    agentWs = ws;
+  } catch (err) {
+    console.error("[agent-api] No se pudo conectar:", err.message);
+    setTimeout(connectToAgentServer, 5000);
+  }
+}
+
+function sendAgentCommand(cmd, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    if (!agentWs || agentWs.readyState !== 1) {
+      return reject(new Error("Agente no conectado"));
+    }
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const timer = setTimeout(() => { pendingCommands.delete(requestId); reject(new Error("Timeout")); }, timeoutMs);
+    pendingCommands.set(requestId, { resolve: (r) => { clearTimeout(timer); resolve(r); } });
+    agentWs.send(JSON.stringify({ type: "command", requestId, cmd }));
+  });
+}
+
+// Agent endpoints
+app.get("/api/agent/status", (req, res) => {
+  res.json({ connected: !!agentWs && agentWs.readyState === 1, agent: agentInfo });
+});
+
+app.post("/api/agent/command", async (req, res) => {
+  try {
+    const result = await sendAgentCommand(req.body);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/screenshot", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "screenshot", path: req.body.path });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/powershell", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "powershell", script: req.body.script });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/open-url", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "open_url", url: req.body.url });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/read-file", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "read_file", path: req.body.path });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/write-file", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "write_file", path: req.body.path, content: req.body.content });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/mouse-click", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "mouse_click", button: req.body.button || "left" });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/mouse-move", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "mouse_move", x: req.body.x, y: req.body.y });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/keyboard", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "keyboard_type", text: req.body.text });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/key-press", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "keyboard_press", key: req.body.key });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/sysinfo", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "sysinfo" });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/list-dir", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "list_dir", path: req.body.path });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/agent/notify", async (req, res) => {
+  try {
+    const result = await sendAgentCommand({ type: "notify", message: req.body.message, title: req.body.title });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Live Vision Stream (SSE) ────────────────────────────────────
+app.get("/api/vision/stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  const question = req.query.q || "Describe lo que ves en la pantalla en español.";
+  let interval = null;
+
+  const sendFrame = async () => {
+    try {
+      const screenshot = await sendAgentCommand({ type: "screenshot" });
+      if (screenshot && screenshot.base64) {
+        // Analyze with vision
+        let description = "";
+        try {
+          description = await callCopilotVision(screenshot.base64, "image/png", question);
+        } catch {
+          // Try other vision APIs
+          const FREEMODEL_KEY = process.env.FREEMODEL_API_KEY;
+          if (FREEMODEL_KEY) {
+            try {
+              description = await callOpenAIVision(FREEMODEL_KEY, process.env.FREEMODEL_BASE_URL || "https://api.freemodel.dev/v1", screenshot.base64, "image/png", question, process.env.FREEMODEL_MODEL || "gpt-4o");
+            } catch { description = "Error en análisis"; }
+          }
+        }
+        res.write(`data: ${JSON.stringify({ screenshot: screenshot.base64, analysis: description })}\n\n`);
+      }
+    } catch (e) {
+      res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+    }
+  };
+
+  // Send first frame immediately
+  sendFrame();
+
+  // Then send at interval
+  interval = setInterval(sendFrame, 3000);
+
+  req.on("close", () => {
+    if (interval) clearInterval(interval);
+  });
 });
 
 function httpsPost(urlStr, headers, body) {
@@ -346,4 +579,6 @@ server.on("upgrade", (req, socket, head) => wsProxy.upgrade(req, socket, head));
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`✦ OpenCode Evolved shell corriendo en http://0.0.0.0:${PORT}`);
   console.log(`  → Proxying a OpenCode en ${OPENCODE_TARGET}`);
+  // Connect to agent server
+  connectToAgentServer();
 });

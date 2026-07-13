@@ -190,15 +190,25 @@ export async function callBestModel(taskType, messages, maxTokens = 4096) {
 
 export async function analyzeScreenshot(screenshotBase64, task, pageInfo) {
   return await callBestModel('vision', [
-    { role: 'system', content: 'Eres un agente de automatización. ACCIONES: CLICK "texto", TYPE "texto" INTO "campo", SCROLL_DOWN, TASK_COMPLETE. Responde con SOLO UNA acción.' },
-    { role: 'user', content: [{ type: 'text', text: `TAREA: ${task}\nURL: ${pageInfo.url}\n¿Qué hacer?` }, { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}`, detail: 'high' } }] }
+    { role: 'system', content: `Eres CUA (Computer-Using Agent). La captura de pantalla tiene elementos numerados en ROJO.
+Usa INNER MONOLOGUE para razonar paso a paso, luego responde con UNA acción:
+
+ACCIONES:
+- CLICK [número] — clic en elemento numerado
+- TYPE "texto" INTO [número] — escribir en elemento
+- SCROLL DOWN / SCROLL UP — desplazar
+- WAIT — esperar
+- DONE — tarea completada` },
+    { role: 'user', content: [{ type: 'text', text: `TAREA: ${task}\nURL: ${pageInfo.url}\nINNER MONOLOGUE:\n1. Analizo la pantalla...\n2. Identifico el elemento relevante...\n3. Decido la acción:` }, { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}`, detail: 'high' } }] }
   ], 2048);
 }
 
 export async function analyzeWithContext(screenshotBase64, task, context, pageInfo) {
   return await callBestModel('vision', [
-    { role: 'system', content: 'Eres un agente de automatización. Responde con una acción.' },
-    { role: 'user', content: [{ type: 'text', text: `TAREA: ${task}\nCONTEXTO: ${context}\nURL: ${pageInfo.url}\n¿Qué hacer?` }, { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}`, detail: 'high' } }] }
+    { role: 'system', content: `Eres CUA (Computer-Using Agent). La captura tiene elementos numerados en ROJO.
+INNER MONOLOGUE → ACCIÓN.
+CLICK [n], TYPE "texto" INTO [n], SCROLL, DONE.` },
+    { role: 'user', content: [{ type: 'text', text: `TAREA: ${task}\nCONTEXTO: ${context}\nURL: ${pageInfo.url}\n¿Qué elemento numerado debo usar?` }, { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}`, detail: 'high' } }] }
   ], 2048);
 }
 
